@@ -239,8 +239,8 @@ Material:
     - _CausticsSpeed: {r: 1, g: 1, b: -0.2, a: -0.33}
     - _CausticsSpeed3D: {r: 1, g: 1, b: 1, a: 1}
     - _CausticsTiling: {r: 0.2, g: 0.2, b: 0.3, a: 0.3}
-    - _Color: {r: 0.25490195, g: 0.98039216, b: 0.6740629, a: 1}
-    - _DepthColor: {r: 0.2007832, g: 0.9056604, b: 0.6108098, a: 1}
+    - _Color: {r: 0.20799215, g: 0.7735849, b: 0.75218403, a: 1}
+    - _DepthColor: {r: 0.1724813, g: 0.7169812, b: 0.6353061, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _FlowTiling: {r: 1, g: 1, b: 0, a: 0}
     - _FoamColor: {r: 1, g: 1, b: 1, a: 1}
