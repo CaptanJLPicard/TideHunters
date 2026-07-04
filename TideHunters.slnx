@@ -12,5 +12,6 @@
   <Project Path="VInspector.csproj" />
   <Project Path="Febucci.TextAnimator.TMP.Runtime.csproj" />
   <Project Path="Febucci.Attributes.Runtime.csproj" />
+  <Project Path="OccaSoftware.Crosshairs.Editor.csproj" />
   <Project Path="AllIn1VfxTexDemoAssembly.csproj" />
 </Solution>
