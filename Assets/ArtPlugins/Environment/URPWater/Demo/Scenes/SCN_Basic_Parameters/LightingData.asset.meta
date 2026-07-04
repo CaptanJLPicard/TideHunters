@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 45e89b83cd0471e4abe74fe9cdc1398a
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 112000000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Demo/Scenes/SCN_Basic_Parameters/LightingData.asset
+  uploadId: 762218

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 1c96248154263484a8232ea60c4511e2
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Demo/Materials/Water/M_URPWater_Demo_Dual.mat
+  uploadId: 762218

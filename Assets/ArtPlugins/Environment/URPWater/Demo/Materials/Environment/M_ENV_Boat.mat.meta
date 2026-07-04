@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: b83a6c49ba2541643a72c208c5462d67
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Demo/Materials/Environment/M_ENV_Boat.mat
+  uploadId: 762218

@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 206e4b0fd7976c742b851eef70622872
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Shaders/HLSL/URPWater_Standard.shader
+  uploadId: 762218

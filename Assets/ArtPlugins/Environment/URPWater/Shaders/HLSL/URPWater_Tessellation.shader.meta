@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: b2457a866357f9a4fbb0720aef891a21
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Shaders/HLSL/URPWater_Tessellation.shader
+  uploadId: 762218

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 8314ffe855e0e45b0a2fdbbdfe2010ea
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Demo/Materials/Environment/M_Skybox_01.mat
+  uploadId: 762218

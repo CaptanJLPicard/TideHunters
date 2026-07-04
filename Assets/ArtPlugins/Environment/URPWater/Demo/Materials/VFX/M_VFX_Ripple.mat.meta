@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 1c1ef55a26c904443bf59938f61a0f0b
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Demo/Materials/VFX/M_VFX_Ripple.mat
+  uploadId: 762218

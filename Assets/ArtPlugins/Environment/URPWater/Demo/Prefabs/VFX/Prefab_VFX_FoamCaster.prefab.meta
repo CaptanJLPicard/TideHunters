@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: e8c365d530cc6b94d84135bc6064584b
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Demo/Prefabs/VFX/Prefab_VFX_FoamCaster.prefab
+  uploadId: 762218

@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 388da34825dc05f4380e2ef1d9de0ec6
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Demo/Prefabs/VFX/Prefab_VFX_Trail.prefab
+  uploadId: 762218

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: f52a43585fe44ae4ab435b1ab4269397
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Demo/Materials/Water/M_URPWater_Demo_Tess_Waves.mat
+  uploadId: 762218

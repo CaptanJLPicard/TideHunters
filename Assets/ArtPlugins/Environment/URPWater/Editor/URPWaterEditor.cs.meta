@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: d0d0819ab58d4014aa4c1c8e7e20faee
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Editor/URPWaterEditor.cs
+  uploadId: 762218

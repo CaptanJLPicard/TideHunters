@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 403dbfafc6a779b4dbb763568799a64f
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Demo/Scripts/DragCamera.cs
+  uploadId: 762218

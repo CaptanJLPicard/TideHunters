@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: 42cf22da127eda34d9b21bc23602a3de
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  preprocessorOverride: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Shaders/HLSL/URPWaterDebugRT.shader
+  uploadId: 762218

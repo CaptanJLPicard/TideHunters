@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 39d063da3d338654aac6f241e597b4bb
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 4890085278179872738
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Demo/Settings/URPWater_Lighting.lighting
+  uploadId: 762218

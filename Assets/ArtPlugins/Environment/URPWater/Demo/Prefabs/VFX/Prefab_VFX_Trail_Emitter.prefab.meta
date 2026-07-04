@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 26720d4697eff204bbd861249b9b4582
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Demo/Prefabs/VFX/Prefab_VFX_Trail_Emitter.prefab
+  uploadId: 762218

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: b99a532c7bafac84188c2810807380da
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Demo/Materials/Environment/M_ENV_Wood.mat
+  uploadId: 762218

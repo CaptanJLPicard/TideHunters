@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 64eb277c64ed1c04a8b92cab1c59c7fe
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Scripts/URPWaterDynamicEffects.cs
+  uploadId: 762218

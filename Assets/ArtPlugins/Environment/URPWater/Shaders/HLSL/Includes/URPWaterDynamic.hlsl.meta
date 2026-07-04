@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: d8ce8384989b1b647b100ad9b06a6dbe
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Shaders/HLSL/Includes/URPWaterDynamic.hlsl
+  uploadId: 762218

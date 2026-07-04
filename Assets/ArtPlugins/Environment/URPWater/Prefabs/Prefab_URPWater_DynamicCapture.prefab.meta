@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 3fc94814e22027a4ab5246239adc7c8e
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Prefabs/Prefab_URPWater_DynamicCapture.prefab
+  uploadId: 762218

@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 14117163048fb5a44ba41b0dbcbfcd42
+DefaultImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Demo/Scenes/SCN_Basic_Parameters.unity
+  uploadId: 762218

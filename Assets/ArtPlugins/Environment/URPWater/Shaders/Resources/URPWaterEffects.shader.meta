@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: e266af77c50de8c4f906b3e7aeaf9e5a
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Shaders/Resources/URPWaterEffects.shader
+  uploadId: 762218

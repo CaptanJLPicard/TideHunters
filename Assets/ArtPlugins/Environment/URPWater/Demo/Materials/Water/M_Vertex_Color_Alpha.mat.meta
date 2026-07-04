@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: baf5a636f1bcb624eab779351b60be2e
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Demo/Materials/Water/M_Vertex_Color_Alpha.mat
+  uploadId: 762218

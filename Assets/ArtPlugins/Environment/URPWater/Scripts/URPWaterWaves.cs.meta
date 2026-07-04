@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: d870eb6bcafabb54fa7484ac24159e6e
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Scripts/URPWaterWaves.cs
+  uploadId: 762218

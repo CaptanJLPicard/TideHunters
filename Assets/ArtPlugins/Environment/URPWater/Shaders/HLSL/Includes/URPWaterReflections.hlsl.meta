@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 8d0fec0b0a6bdc2408756ab82d6d0355
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Shaders/HLSL/Includes/URPWaterReflections.hlsl
+  uploadId: 762218

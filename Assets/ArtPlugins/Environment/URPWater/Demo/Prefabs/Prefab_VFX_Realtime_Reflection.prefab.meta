@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 63dfea3cbdef4df47b127c38799810e8
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 184590
+  packageName: URP Water
+  packageVersion: 1.2.2
+  assetPath: Assets/URPWater/Demo/Prefabs/Prefab_VFX_Realtime_Reflection.prefab
+  uploadId: 762218
