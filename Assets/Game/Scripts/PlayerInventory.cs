@@ -70,6 +70,7 @@ public class PlayerInventory : NetworkBehaviour
     private Dictionary<WeaponId, GameObject> _weaponObjects;
     private WeaponId _shownWeapon = WeaponId.None;
     private PlayerCombat _combat;
+    private PlayerController _pc;
 
     /// <summary>Raised on every client whenever the inventory or selection changes (for the hotbar UI + carry visual).</summary>
     public event Action OnChanged;
@@ -104,6 +105,7 @@ public class PlayerInventory : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         _combat = GetComponent<PlayerCombat>();
+        _pc = GetComponent<PlayerController>();
         CacheWeapons();
         _inv.OnValueChanged += OnInvChanged;
         ApplyHeld();
@@ -137,6 +139,8 @@ public class PlayerInventory : NetworkBehaviour
     private void Update()
     {
         if (!IsOwner) return;
+        if (PauseMenu.IsOpen) return;
+        if (_pc != null && _pc.IsDriving) return; // no weapon/slot input while steering
         if (_combat != null && _combat.IsAttacking) return; // no weapon switching mid-attack
         var kb = Keyboard.current;
         if (kb == null) return;
@@ -150,6 +154,7 @@ public class PlayerInventory : NetworkBehaviour
     public void RequestDrop()
     {
         if (!IsOwner) return;
+        if (_pc != null && _pc.InWater) return; // never drop items into the sea (swimming or standing in water)
         if (IsServer) DropSelectedServer(); else DropRpc();
     }
 
@@ -173,10 +178,21 @@ public class PlayerInventory : NetworkBehaviour
         _inv.Value = s;
 
         Vector3 origin = transform.position + transform.forward * 1.2f + Vector3.up * 0.6f;
-        Vector3 pos = Physics.Raycast(origin, Vector3.down, out var hit, 4f) ? hit.point : origin - Vector3.up * 0.5f;
+        ShipController ship = null;
+        Vector3 pos;
+        if (Physics.Raycast(origin, Vector3.down, out var hit, 4f))
+        {
+            pos = hit.point;
+            ship = hit.collider.GetComponentInParent<ShipController>(); // dropped onto a ship's deck?
+        }
+        else pos = origin - Vector3.up * 0.5f;
+
         var go = Instantiate(droppedWeaponPrefab, pos, Quaternion.identity);
-        go.GetComponent<NetworkObject>().Spawn(true);
+        var no = go.GetComponent<NetworkObject>();
+        no.Spawn(true);
         go.GetComponent<DroppedWeapon>().SetWeaponServer(id);
+        // Dropped onto a ship's deck: parent it to the hull so it rides along (not just chests — any drop).
+        if (ship != null) no.TrySetParent(ship.NetworkObject, true);
     }
 
     /// <summary>Server: put the carried chest back into the world in front of the player and clear its slot.</summary>
@@ -193,8 +209,12 @@ public class PlayerInventory : NetworkBehaviour
         // Drop point in front of the player; raycast down to find the ground under it.
         Vector3 dropXZ = transform.position + transform.forward * 1.3f;
         float groundY = transform.position.y;
+        ShipController ship = null;
         if (Physics.Raycast(dropXZ + Vector3.up * 3f, Vector3.down, out var hit, 12f, ~0, QueryTriggerInteraction.Ignore))
+        {
             groundY = hit.point.y;
+            ship = hit.collider.GetComponentInParent<ShipController>(); // dropped onto a ship's deck?
+        }
 
         var go = Instantiate(def.worldPrefab, new Vector3(dropXZ.x, groundY, dropXZ.z),
             Quaternion.Euler(0f, transform.eulerAngles.y, 0f));
@@ -204,7 +224,10 @@ public class PlayerInventory : NetworkBehaviour
         var col = go.GetComponentInChildren<Collider>();
         if (col != null) go.transform.position += Vector3.up * (groundY - col.bounds.min.y);
 
-        go.GetComponent<NetworkObject>().Spawn(true);
+        var no = go.GetComponent<NetworkObject>();
+        no.Spawn(true);
+        // Dropped onto a ship's deck: parent it to the hull so it rides along — you can haul chests by sea.
+        if (ship != null) no.TrySetParent(ship.NetworkObject, true);
     }
 
     // ---- Owner requests → server ---------------------------------------------------------
@@ -266,6 +289,12 @@ public class PlayerInventory : NetworkBehaviour
         s.Selected = (byte)target; // auto-select → carry it now
         _inv.Value = s;
         return true;
+    }
+
+    /// <summary>Server: wipe the inventory back to empty (used on a match restart).</summary>
+    public void ResetServer()
+    {
+        if (IsServer) _inv.Value = default;
     }
 
     // ---- Held weapon visual (every client) -----------------------------------------------

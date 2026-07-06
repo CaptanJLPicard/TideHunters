@@ -85,9 +85,64 @@ Tekrarlanan hatalardan kaçınmak için oturumlardan çıkarılan kurallar.
   her dalgada yüzeyde, senkron, ne batar ne havada kalır. Bob görsel-only (iskelet "Root"
   child'ına uygulanır; kamera sallanmaz), ağa gitmez.
 
+## Networked moving platform (drivable ship)
+- **Kamera hedefi hızlı hareket edince ThirdPersonFollow "kolu" çöker** → kamera hedefe yapışır (mesafe ~0).
+  Sıfır damping bunu tetikler; kolun açılması için biraz damping şart. En sağlamı: hızlı hareket eden bir
+  hedefte over-shoulder body'yi (ThirdPersonFollow) **kapatıp kamerayı ELLE konumlandır**:
+  `vcam.transform.position = anchor - look*forward*distance` → matematiksel olarak asla çökemez, hep tam
+  `distance` uzakta. Anchor'ı geminin YALPASIZ düz pozundan (PosX/PosZ/Yaw + restY, dalga bob'u HARİÇ) al →
+  kamera dururkenki gibi sabit. Kamera hedefi (pivot) da her gemi prefabının **child'ı** olsun (yeniden
+  kullanılabilir), ama gemi rotasyonunu miras alma sorununu bu elle-konumlandırma zaten çözer.
+- **Gemi üzerindeki oyuncu/obje jitter'ı**: gemi transform'u `LateUpdate`'te hareket ediyorsa, ona sabitlenen
+  şey de **gemiden SONRA** sabitlenmeli. Çözüm: gemiye `[DefaultExecutionOrder(-100)]` (gemi önce güncellensin)
+  + oyuncuyu PlayerPoint'e **LateUpdate'te (hareket sonrası)** sabitle, Update'te değil. Update'te sabitlersen
+  1 frame geride kalır → titrer. Owner ve remote (interpolasyonlu gemi) için de aynı: remote sürücüyü kendi
+  replike pozuna değil, **geminin (pürüzsüz interpolasyonlu) PlayerPoint'ine** sabitle.
+- **Yolcu (sürmeyen ama güvertede duran) kayması** — hareketli platform: CharacterController gemiyle taşınmaz,
+  gemi ayağının altından kayar. Çözüm (owner, LateUpdate): üzerinde durduğu gemiyi kısa raycast'le bul (kendi
+  collider'ını atla — RaycastAll + IsChildOf), sonra dünya pozunu geminin **TAM transform'uyla** (matris:
+  `lastWorldToLocal.MultiplyPoint * localToWorld.MultiplyPoint`) bir frame ileri taşı → `_cc.Move(delta)`.
+  **YAW-ONLY carry YETMEZ**: dalga pitch/roll'ü deck'i eğdiği için oyuncu kayar; TAM transform (öteleme + yaw +
+  pitch/roll + bob) kullan ki oyuncu deck'teki tam noktaya yapışsın. Sadece POZİSYON taşı (dik kalsın).
+- **Uzak oyuncuların gemiye yapışması** (online): remote'un oyuncu-interpolasyonu ile gemi-interpolasyonu
+  farklı gecikmede olduğu için world-poz replike edilirse remote'ta gemiye göre kayar. Çözüm: riding'ken
+  `StatePayload`'da pozu **gemiye göre LOCAL** replike et + `PlatformId` (geminin NetworkObjectId'si). Remote
+  `ApplySnap`'te local pozu geminin **güncel** transform'uyla world'e çevirir (`shipT.TransformPoint`) →
+  gemiye yapışır. Owner kendi world `_current`'ını kullanmaya devam eder (kendi `_netState`'ini yok sayar), o
+  yüzden solo deneyim değişmez. Gemi bulunamazsa local pozu world sanıp origin'e ışınlama — poz'u koru.
+- **Gemide bırakılan objeler**: drop'ta yere raycast at; `hit.collider.GetComponentInParent<ShipController>()`
+  ile gemiye düştüyse spawn sonrası `no.TrySetParent(ship.NetworkObject, true)` → Netcode parent'ı senkronlar,
+  obje gemiyle taşınır. Rigidbody'siz objelerde (WorldChest/DroppedWeapon) parent yeter; fizikli olsaydı
+  gemideyken kinematik yapmak gerekirdi.
+
 ## Netcode for GameObjects 2.x
 - `NetworkBehaviour`'da `OnNetworkTick` YOK → `NetworkManager.NetworkTickSystem.Tick` event'ine
   abone ol (OnNetworkSpawn'da +=, OnNetworkDespawn'da -=).
+- **Senkron "restart" (SceneManager.LoadScene ile) tuzakları** (EnableSceneManagement=true):
+  - **NetworkManager sahnedeyken bile hayatta kalır** — Netcode onu scene-load sırasında korur
+    (`IsHost/IsListening` korundu, doğrulandı). Yani LoadScene(Single) güvenle çağrılır.
+  - **In-scene NetworkObject'ler (sandıklar) reload'da despawn+respawn olur** → sıfırlanır.
+  - **AMA dynamic-spawn olan NetworkObject'ler (player, dropped item) reload'da PERSIST eder** →
+    `OnNetworkSpawn` TEKRAR ÇALIŞMAZ (aynı instanceID). Semptom: oyuncu spawn'a dönmez + **kamera donar**
+    (in-scene CinemachineCamera reload'da yeniden yaratılır, yeni vcam'in Follow'u NULL, eski vcam yok olur,
+    oyuncunun rig'i eski vcam'e bağlı → takip yok). Çözümler: (a) `PlayerCameraRig.ApplyToTarget`'ta
+    `if (_vcam == null) BindSceneCamera()` self-heal (yeni vcam'e yeniden bağlanır); (b) spawn pozunu
+    OnNetworkSpawn'da yakala, `NetworkManager.SceneManager.OnLoadComplete`'e abone ol, owner'ı spawn'a
+    ışınla; (c) dinamik drop'ları despawn et + envanterleri `_inv.Value = default` ile temizle (persist
+    ederler, LoadScene onları temizlemez).
+  - **Shutdown sonrası menüyü göstermek**: `OnClientDisconnectCallback` host'un kendi shutdown'ında
+    güvenilir tetiklenmeyebilir → `OnClientStopped`/`OnServerStopped` (Action<bool>) event'lerine de abone ol.
+    Menü açılınca imleci aç (`Cursor.lockState=None, visible=true`) yoksa butonlara tıklanamaz.
+- **Runtime UI'da built-in sprite**: `Resources.GetBuiltinResource<Sprite>("UI/Skin/UISprite.psd")` RUNTIME'da
+  başarısız (null + "could not be loaded" hatası) — bu bir editor-only "extra" resource. Editör tarafında
+  `AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd")` çalışır. UI'ı runtime'da kod ile
+  kurmak yerine bir editör builder script'iyle SAHNEDE gerçek obje olarak kur + sprite'ı build anında ata →
+  runtime yüklemesi olmaz, hata biter, obje inspector'dan düzenlenebilir.
+- **[Rpc] ownership**: NGO 2.x'te `[Rpc(SendTo.Server)]` varsayılan `InvokePermission=Everyone` (eski
+  `[ServerRpc]` RequireOwnership=true değildi). Sahibe kısıtlamak için `[Rpc(SendTo.Server,
+  InvokePermission = RpcInvokePermission.Owner)]`. `if(!IsOwner)` guard'ı SADECE client-side; kötü niyetli
+  client başkasının NetworkObject'ine RPC atabilir (server dispatch hedefi mesajdaki NetworkObjectId'den
+  çözer, gönderenden değil).
 - RPC: `[Rpc(SendTo.Server)]` / `[Rpc(SendTo.Owner)]` (klasikler `[ServerRpc]` obsolete).
 - Client-side prediction için `NetworkTransform`'u kaldırıp özel replikasyon (NetworkVariable +
   reconciliation) kur; NetworkTransform prediction ile çakışır.

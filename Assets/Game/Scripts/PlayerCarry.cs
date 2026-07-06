@@ -28,7 +28,7 @@ public class PlayerCarry : NetworkBehaviour
     [SerializeField] private float moveSharpness = 5f;
 
     private PlayerInventory _inv;
-    private PlayerController _pc;
+    private PlayerController _pc;   // for the driving pose
     private Animator _animator;
     private int _carryLayer = -1;
     private Transform _leftHand, _rightHand, _leftUpperArm, _rightUpperArm;
@@ -38,8 +38,9 @@ public class PlayerCarry : NetworkBehaviour
     private float _smoothRaise;
     private float _smoothMove;
 
-    /// <summary>True on every client while this player is carrying a chest — drives the carry pose.</summary>
-    public bool IsCarrying => _inv != null && _inv.IsCarryingChest;
+    /// <summary>True on every client while this player holds the carry pose — carrying a chest, or steering a
+    /// ship (hands on the wheel reuse the same two-handed pose).</summary>
+    public bool IsCarrying => (_inv != null && _inv.IsCarryingChest) || (_pc != null && _pc.IsDriving);
 
     public override void OnNetworkSpawn()
     {

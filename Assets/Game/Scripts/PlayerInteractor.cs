@@ -14,23 +14,57 @@ public class PlayerInteractor : NetworkBehaviour
     [SerializeField] private float range = 4.5f;
     [Tooltip("How wide (deg) around the crosshair an item still counts as 'looked at'. Larger = more forgiving.")]
     [SerializeField] private float aimAngle = 18f;
+    [Tooltip("How close to a ship's hull you can be to climb aboard from the water / a dock.")]
+    [SerializeField] private float boardRange = 5.5f;
 
     private PlayerInventory _inv;
     private PlayerCombat _combat;
+    private PlayerController _pc;
 
     public override void OnNetworkSpawn()
     {
         _inv = GetComponent<PlayerInventory>();
         _combat = GetComponent<PlayerCombat>();
+        _pc = GetComponent<PlayerController>();
     }
 
     private void Update()
     {
         if (!IsOwner) return;
+        if (PauseMenu.IsOpen) { GameHUD.Instance?.HidePrompt(); return; }
 
         var hud = GameHUD.Instance;
         var shop = ShopManager.Instance;
         bool ePressed = Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame;
+
+        // 0) Driving a ship: E steps off the wheel; nothing else interacts.
+        if (_pc != null && _pc.IsDriving)
+        {
+            hud?.HidePrompt();
+            if (ePressed) _pc.RequestLeaveShip();
+            return;
+        }
+
+        // A ship's wheel under the crosshair — take the wheel.
+        var ship = FindLookedAtWheel();
+        if (ship != null)
+        {
+            hud?.ShowPrompt("Press E to interact");
+            if (ePressed) _pc?.RequestBoard(ship);
+            return;
+        }
+
+        // Looking at a ship's hull from the water / a dock (and not already aboard) — climb onto the deck.
+        if (_pc != null && !_pc.IsRidingShip)
+        {
+            var boardable = FindShipToBoard();
+            if (boardable != null)
+            {
+                hud?.ShowPrompt("Press E to climb aboard");
+                if (ePressed) _pc.BoardAsPassenger(boardable);
+                return;
+            }
+        }
 
         // 1) A shop item under the crosshair takes priority.
         int shopTarget = shop != null ? FindLookedAt(shop) : -1;
@@ -107,6 +141,56 @@ public class PlayerInteractor : NetworkBehaviour
             if (angle < bestAngle) { bestAngle = angle; best = c; }
         }
         return best;
+    }
+
+    /// <summary>The nearest un-driven ship whose wheel is under the crosshair and within reach. Null if none.</summary>
+    private ShipController FindLookedAtWheel()
+    {
+        var cam = Camera.main;
+        if (cam == null) return null;
+        Vector3 camPos = cam.transform.position, camFwd = cam.transform.forward;
+        float rangeSqr = (range + 1.5f) * (range + 1.5f); // the wheel sits a little away on the deck
+        ShipController best = null;
+        float bestAngle = aimAngle;
+        foreach (var s in ShipController.Active)
+        {
+            if (s == null || s.IsDriven) continue;
+            Vector3 aim = s.WheelAimPoint;
+            if ((aim - transform.position).sqrMagnitude > rangeSqr) continue;
+            float angle = Vector3.Angle(camFwd, aim - camPos);
+            if (angle < bestAngle) { bestAngle = angle; best = s; }
+        }
+        return best;
+    }
+
+    private static readonly RaycastHit[] _boardHits = new RaycastHit[16];
+
+    /// <summary>The ship whose hull is directly under the crosshair and within climb-aboard reach — a real
+    /// view ray, so it only triggers when we actually look AT the hull (empty water has no collider). Null
+    /// if we're looking at open water, land, or a hull that's too far.</summary>
+    private ShipController FindShipToBoard()
+    {
+        var cam = Camera.main;
+        if (cam == null) return null;
+        int n = Physics.RaycastNonAlloc(cam.transform.position, cam.transform.forward, _boardHits,
+            boardRange + 10f, ~0, QueryTriggerInteraction.Ignore);
+        // Nearest-first: whatever the crosshair lands on first is what we're looking at.
+        System.Array.Sort(_boardHits, 0, n, RaycastDistanceComparer.Instance);
+        for (int i = 0; i < n; i++)
+        {
+            var t = _boardHits[i].collider.transform;
+            if (t == transform || t.IsChildOf(transform)) continue; // ignore our own body
+            var s = _boardHits[i].collider.GetComponentInParent<ShipController>();
+            if (s == null) return null;                             // looking at water/land, not a hull
+            return (_boardHits[i].point - transform.position).sqrMagnitude <= boardRange * boardRange ? s : null;
+        }
+        return null;
+    }
+
+    private sealed class RaycastDistanceComparer : System.Collections.Generic.IComparer<RaycastHit>
+    {
+        public static readonly RaycastDistanceComparer Instance = new RaycastDistanceComparer();
+        public int Compare(RaycastHit a, RaycastHit b) => a.distance.CompareTo(b.distance);
     }
 
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]

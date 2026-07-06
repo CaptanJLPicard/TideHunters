@@ -56,6 +56,25 @@ public class PlayerController : NetworkBehaviour
     private PlayerAnimator _anim;
     private PlayerCameraRig _cameraRig;
     private PlayerInventory _inv;
+    private Vector3 _spawnPos;
+    private float _spawnYaw;
+    private ShipController _drivingShip;   // the ship this player is currently driving (null = on foot)
+    private ShipController _platform;      // ship we're STANDING on as a passenger (moving-platform carry)
+    private Matrix4x4 _platformLastW2L;    // its world->local last frame, to carry our exact deck spot forward
+
+    // Server-set on board; replicated so every client parks the driver at the ship's wheel + plays the pose.
+    private readonly NetworkVariable<NetworkObjectReference> _shipRef = new(default,
+        NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    /// <summary>True while this player is steering a ship — other player scripts freeze their input / show the pose.</summary>
+    public bool IsDriving => _drivingShip != null;
+    public ShipController DrivingShip => _drivingShip;
+    /// <summary>True while driving OR standing on a ship's deck (so we don't offer to climb aboard again).</summary>
+    public bool IsRidingShip => _drivingShip != null || _platform != null;
+
+    [Header("Ship camera")]
+    [SerializeField] private float shipCamDistance = 15f; // how far the camera sits from the ship while sailing (whole ship in view)
+    [SerializeField] private float shipCamPitch = 8f;     // a low, level-ish look at the ship (not from high above)
 
     // Owner input actions.
     private InputActionMap _playerMap;
@@ -97,6 +116,20 @@ public class PlayerController : NetworkBehaviour
     /// <summary>True while this player is in the water (swimming / treading), replicated to every client.</summary>
     public bool IsSwimming => _current.IsSwimming;
 
+    /// <summary>True while in the water at all — swimming/treading OR standing with feet below the (wavy)
+    /// surface. Owner-side check (uses this machine's live transform); used to forbid dropping items into the sea.</summary>
+    public bool InWater
+    {
+        get
+        {
+            if (_current.IsSwimming) return true;
+            float timeX = Time.timeSinceLevelLoad / 20f;
+            float surface = motor.waterLevelY + OceanWaves.SurfaceOffsetY(transform.position, timeX,
+                waveCount, waveLength, waveSteepness, waveSpeed, waveAmplitude);
+            return transform.position.y < surface;
+        }
+    }
+
     /// <summary>Owner camera yaw (deg). Its recent change = how the player is sweeping the view left/right.</summary>
     public float CameraYaw => _cameraRig != null ? _cameraRig.BodyYaw : 0f;
 
@@ -110,6 +143,8 @@ public class PlayerController : NetworkBehaviour
     {
         _cc = GetComponent<CharacterController>();
         _inv = GetComponent<PlayerInventory>();
+        _spawnPos = transform.position;
+        _spawnYaw = transform.eulerAngles.y;
         _cameraTarget = transform.Find("CameraTarget");
         _skeletonRoot = transform.Find("Root");
         if (_skeletonRoot != null) _skeletonBaseLocal = _skeletonRoot.localPosition;
@@ -135,17 +170,37 @@ public class PlayerController : NetworkBehaviour
         if (IsServer) _netState.Value = _current;
 
         _netState.OnValueChanged += OnNetStateChanged;
+        _shipRef.OnValueChanged += OnShipRefChanged;
 
         if (IsOwner) SetupOwner();
+        ResolveShip();
 
         NetworkManager.NetworkTickSystem.Tick += OnTick;
+        if (NetworkManager.SceneManager != null)
+            NetworkManager.SceneManager.OnLoadComplete += OnSceneLoadComplete;
+    }
+
+    // A scene reload (host restart) keeps player objects alive, so OnNetworkSpawn does NOT re-run: put the
+    // owner back at its spawn here. (The camera rig re-binds itself to the new scene camera in ApplyToTarget.)
+    private void OnSceneLoadComplete(ulong clientId, string sceneName, UnityEngine.SceneManagement.LoadSceneMode mode)
+    {
+        if (!IsOwner || clientId != NetworkManager.LocalClientId) return;
+        Teleport(_spawnPos);
+        _current.Position = _spawnPos;
+        _current.Yaw = _spawnYaw;
+        _current.VerticalVelocity = 0f;
+        transform.rotation = Quaternion.Euler(0f, _spawnYaw, 0f);
+        _cameraRig?.ResetYaw(_spawnYaw);
     }
 
     public override void OnNetworkDespawn()
     {
         if (NetworkManager != null && NetworkManager.NetworkTickSystem != null)
             NetworkManager.NetworkTickSystem.Tick -= OnTick;
+        if (NetworkManager != null && NetworkManager.SceneManager != null)
+            NetworkManager.SceneManager.OnLoadComplete -= OnSceneLoadComplete;
         _netState.OnValueChanged -= OnNetStateChanged;
+        _shipRef.OnValueChanged -= OnShipRefChanged;
 
         if (IsOwner)
         {
@@ -153,6 +208,87 @@ public class PlayerController : NetworkBehaviour
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
         }
+    }
+
+    // ---- Ship driving ----------------------------------------------------------------------
+
+    private void OnShipRefChanged(NetworkObjectReference _, NetworkObjectReference __) => ResolveShip();
+
+    private void ResolveShip()
+    {
+        ShipController ship = null;
+        if (_shipRef.Value.TryGet(out var no)) ship = no.GetComponent<ShipController>();
+        if (ship == _drivingShip) return;
+        ShipController previous = _drivingShip;
+        _drivingShip = ship;
+
+        if (IsOwner)
+        {
+            if (_cc != null) _cc.enabled = _drivingShip == null; // detach the character controller while aboard
+            if (_drivingShip != null)
+            {
+                _cameraRig?.ResetYaw(_drivingShip.transform.eulerAngles.y);
+                _cameraRig?.SetPitch(shipCamPitch);
+                _cameraRig?.EnterShipMode(_drivingShip, shipCamDistance);
+            }
+            else
+            {
+                // Step off ONTO the ship's CURRENT PlayerPoint (the ship may have sailed far since we took the
+                // wheel) so we land on the deck — never in the sea where the moving ship used to be — and start
+                // riding as a passenger immediately so the carry keeps us aboard.
+                if (previous != null && previous.PlayerPoint != null)
+                {
+                    Vector3 spot = previous.PlayerPoint.position;
+                    Teleport(spot);
+                    _current.Position = spot;
+                    _current.Yaw = previous.PlayerPoint.eulerAngles.y;
+                    _current.VerticalVelocity = 0f;
+                    _platform = previous;
+                    _platformLastW2L = previous.transform.worldToLocalMatrix;
+                }
+                _cameraRig?.ExitShipMode();
+                _cameraRig?.ResetYaw(transform.eulerAngles.y);
+                _cameraRig?.SetPitch(10f);
+            }
+        }
+    }
+
+    /// <summary>Owner: ask the server to let this player take the wheel of <paramref name="ship"/>.</summary>
+    public void RequestBoard(ShipController ship) { if (IsOwner && ship != null) BoardRpc(ship.NetworkObject); }
+    /// <summary>Owner: ask the server to step off the wheel.</summary>
+    public void RequestLeaveShip() { if (IsOwner && _drivingShip != null) LeaveRpc(); }
+
+    /// <summary>Owner: climb from the water/dock onto a ship's deck and start riding it as a passenger. Movement
+    /// is client-authoritative, so the owner places itself and the position replicates; the passenger carry
+    /// then keeps it glued to the deck for everyone.</summary>
+    public void BoardAsPassenger(ShipController ship)
+    {
+        if (!IsOwner || ship == null || _drivingShip != null) return;
+        Vector3 spot = ship.DeckBoardPoint;
+        Teleport(spot);
+        _current.Position = spot;
+        _current.Yaw = ship.transform.eulerAngles.y;
+        _current.VerticalVelocity = 0f;
+        _current.IsSwimming = false;
+        _platform = ship;                                   // start riding immediately (no fall/slide gap)
+        _platformLastW2L = ship.transform.worldToLocalMatrix;
+    }
+
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
+    private void BoardRpc(NetworkObjectReference shipRef)
+    {
+        if (!shipRef.TryGet(out var no)) return;
+        var ship = no.GetComponent<ShipController>();
+        if (ship == null || ship.IsDriven) return; // someone already has the wheel
+        _shipRef.Value = shipRef;
+        ship.SetDriverServer(OwnerClientId);
+    }
+
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
+    private void LeaveRpc()
+    {
+        if (_shipRef.Value.TryGet(out var no)) no.GetComponent<ShipController>()?.SetDriverServer(ShipController.NoDriver);
+        _shipRef.Value = default;
     }
 
     private void SetupOwner()
@@ -187,12 +323,16 @@ public class PlayerController : NetworkBehaviour
     {
         if (!_ownerSim) return;
 
+        if (_drivingShip != null) { DriveUpdate(); return; }
+
         if (_jump != null && _jump.WasPressedThisFrame()) _jumpLatched = true;
-        if (!EmoteWheel.IsOpen) _cameraRig?.UpdateAngles(Time.deltaTime); // freeze look while aiming the emote wheel
+        // Freeze the look while aiming the emote wheel or with the pause menu open.
+        if (!EmoteWheel.IsOpen && !PauseMenu.IsOpen) _cameraRig?.UpdateAngles(Time.deltaTime);
 
         // Simulate this frame with real delta time -> frame-aligned, perfectly smooth motion.
         InputCommand cmd = SampleInput();
         cmd.Tick = NetworkManager.LocalTime.Tick;
+        if (PauseMenu.IsOpen) { cmd.MoveX = 0f; cmd.MoveY = 0f; cmd.Jump = false; cmd.Sprint = false; _jumpLatched = false; }
 
         // Carrying a chest: hands full, so no sprint and a heavier, slower walk. The animator's locomotion
         // playback is scaled to match (see LateUpdate) so the reduced walk still plants its feet.
@@ -209,6 +349,66 @@ public class PlayerController : NetworkBehaviour
         next.LastProcessedInputTick = cmd.Tick;
         if (IsFinite(next.Position)) _current = next; // transform is now at next.Position (set by CharacterController.Move)
         else Teleport(_current.Position);             // sim produced a non-finite pose — hold the last good one
+    }
+
+    // Driving: parked at the ship's wheel. The ship reads its own W/S/A/D and moves us with it; here we just
+    // pin to the PlayerPoint (which rocks with the ship) and keep orbiting the camera with the mouse.
+    private void DriveUpdate()
+    {
+        if (!EmoteWheel.IsOpen && !PauseMenu.IsOpen) _cameraRig?.UpdateAngles(Time.deltaTime);
+        var pp = _drivingShip.PlayerPoint;
+        if (pp != null)
+        {
+            transform.SetPositionAndRotation(pp.position, pp.rotation);
+            _current.Position = pp.position;
+            _current.Yaw = pp.eulerAngles.y;
+            _current.Speed = 0f; _current.MoveX = 0f; _current.MoveY = 0f;
+            _current.Grounded = true; _current.IsSwimming = false;
+        }
+        _current.Tick = NetworkManager.LocalTime.Tick;
+    }
+
+    // Owner on foot: if standing on a ship, move with it (translation + heading + bob) each frame so we stay
+    // put on the deck instead of sliding/jittering as the hull sails and rocks beneath us. Runs in LateUpdate
+    // AFTER ShipController moved the hull (execution order), using the hull's flat pose (yaw only, no tilt) so
+    // the character stays upright. The carried position replicates normally, so remotes see us ride along too.
+    private void CarryOnShip()
+    {
+        ShipController ground = DetectGroundShip();
+        if (ground != null && ground == _platform && _cc != null && _cc.enabled)
+        {
+            // Map our world position onto the deck with the FULL hull transform this frame (translation +
+            // heading + wave pitch/roll/bob), so we track the exact spot we stand on — wave rock included —
+            // and the ship never slides beneath our feet. Only the position is carried; we stay upright.
+            Vector3 local = _platformLastW2L.MultiplyPoint3x4(transform.position);
+            Vector3 carried = ground.transform.localToWorldMatrix.MultiplyPoint3x4(local);
+            Vector3 delta = carried - transform.position;
+            if (delta.sqrMagnitude > 1e-8f)
+            {
+                _cc.Move(delta);
+                _current.Position = transform.position;
+            }
+        }
+        _platform = ground;
+        if (ground != null) _platformLastW2L = ground.transform.worldToLocalMatrix;
+    }
+
+    // The ship directly under our feet (or null). Skips our own collider.
+    private ShipController DetectGroundShip()
+    {
+        if (_cc == null) return null;
+        Bounds b = _cc.bounds;
+        Vector3 origin = new Vector3(b.center.x, b.min.y + 0.3f, b.center.z);
+        var hits = Physics.RaycastAll(origin, Vector3.down, 0.8f, ~0, QueryTriggerInteraction.Ignore);
+        ShipController best = null;
+        float bestDist = float.MaxValue;
+        foreach (var h in hits)
+        {
+            if (h.collider.transform == transform || h.collider.transform.IsChildOf(transform)) continue; // self
+            var s = h.collider.GetComponentInParent<ShipController>();
+            if (s != null && h.distance < bestDist) { bestDist = h.distance; best = s; }
+        }
+        return best;
     }
 
     /// <summary>Play an emote (1..3) — called by the emote wheel. Owner only; movement/jump cancels it.</summary>
@@ -246,8 +446,25 @@ public class PlayerController : NetworkBehaviour
         if (!_ownerSim) return; // only the owner advances + publishes this player's authoritative state
 
         _current.Tick = NetworkManager.LocalTime.Tick;
-        if (IsServer) _netState.Value = _current; // host owner writes the NetworkVariable directly
-        else SubmitStateRpc(_current);            // client owner ships it to the server to publish
+        StatePayload net = ToNetworkState();      // world pose, or ship-local while riding (so remotes glue us)
+        if (IsServer) _netState.Value = net;      // host owner writes the NetworkVariable directly
+        else SubmitStateRpc(net);                 // client owner ships it to the server to publish
+    }
+
+    // Build the state to replicate. On a ship, ship Position/Yaw as LOCAL to the hull + the ship's id, so every
+    // remote rebuilds our world pose against that ship's own transform and we stay glued to the deck.
+    private StatePayload ToNetworkState()
+    {
+        var s = _current;
+        ShipController ride = _drivingShip != null ? _drivingShip : _platform;
+        if (ride != null && ride.NetworkObject != null && ride.NetworkObject.IsSpawned)
+        {
+            s.PlatformId = ride.NetworkObject.NetworkObjectId;
+            s.Position = ride.transform.InverseTransformPoint(_current.Position);
+            s.Yaw = Mathf.DeltaAngle(ride.transform.eulerAngles.y, _current.Yaw);
+        }
+        else s.PlatformId = 0UL;
+        return s;
     }
 
     // Client owner → server: hand the server this player's authoritative state so it can publish it to
@@ -271,10 +488,24 @@ public class PlayerController : NetworkBehaviour
 
     private void LateUpdate()
     {
-        // Anyone who doesn't own this player renders it from interpolated snapshots of its authoritative
-        // state. The owner already holds the live per-frame sim result on its transform — nothing to do.
-        if (!_ownerSim)
+        // A driver — owner OR remote — is pinned to the wheel here in LateUpdate, AFTER ShipController moved the
+        // hull this frame (it runs earlier via execution order). Pinning post-move means the player never lags
+        // a frame behind the rocking/sailing ship → no jitter, identical on host and clients.
+        if (_drivingShip != null && _drivingShip.PlayerPoint != null)
+        {
+            var pp = _drivingShip.PlayerPoint;
+            transform.SetPositionAndRotation(pp.position, pp.rotation);
+        }
+        else if (!_ownerSim)
+        {
+            // Non-drivers we don't own render from interpolated snapshots of their authoritative state.
             Interpolate(NetworkManager.ServerTime.Time - interpolationTicks * _dt);
+        }
+        else
+        {
+            // Owner on foot: ride any ship we're standing on so we stay put on the deck as it sails/rocks.
+            CarryOnShip();
+        }
 
         ApplyVisual();
         if (_cameraRig != null)
@@ -323,11 +554,45 @@ public class PlayerController : NetworkBehaviour
 
     private void ApplySnap(in StatePayload a, in StatePayload b, float f)
     {
-        Vector3 pos = Vector3.Lerp(a.Position, b.Position, f);
+        Vector3 pos;
+        float yaw;
+        if (b.PlatformId != 0UL)
+        {
+            // Riding a ship: Position/Yaw are ship-LOCAL. Rebuild against the ship's CURRENT transform so this
+            // player stays glued to the (sailing, rocking) deck instead of sliding relative to it.
+            if (!TryGetShipTransform(b.PlatformId, out var shipT)) return; // ship not resolvable — hold pose
+            if (a.PlatformId == b.PlatformId)
+            {
+                Vector3 local = Vector3.Lerp(a.Position, b.Position, f);
+                pos = shipT.TransformPoint(local);
+                yaw = shipT.eulerAngles.y + Mathf.LerpAngle(a.Yaw, b.Yaw, f);
+            }
+            else // just boarded (prior snapshot was land / another ship): snap to b, no cross-space blend
+            {
+                pos = shipT.TransformPoint(b.Position);
+                yaw = shipT.eulerAngles.y + b.Yaw;
+            }
+        }
+        else
+        {
+            pos = Vector3.Lerp(a.Position, b.Position, f);
+            yaw = Mathf.LerpAngle(a.Yaw, b.Yaw, f);
+        }
         if (!IsFinite(pos)) return; // ignore a corrupt snapshot rather than snap the transform to NaN
-        float yaw = Mathf.LerpAngle(a.Yaw, b.Yaw, f);
         transform.SetPositionAndRotation(pos, Quaternion.Euler(0f, yaw, 0f));
         _current = b;
+        _current.Position = pos; // keep _current world-space for any downstream consumer
+        _current.Yaw = yaw;
+    }
+
+    private bool TryGetShipTransform(ulong netId, out Transform t)
+    {
+        t = null;
+        var nm = NetworkManager;
+        if (nm != null && nm.SpawnManager != null &&
+            nm.SpawnManager.SpawnedObjects.TryGetValue(netId, out var no) && no != null)
+        { t = no.transform; return true; }
+        return false;
     }
 
     // ---- Helpers ---------------------------------------------------------------------------

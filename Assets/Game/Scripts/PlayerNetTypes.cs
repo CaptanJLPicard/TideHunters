@@ -53,6 +53,11 @@ public struct StatePayload : INetworkSerializable, IEquatable<StatePayload>
     public int Emote;     // active emote id (0 = none)
     public int JumpStamp; // increments on each jump start (edge trigger for the jump anim)
 
+    // When non-zero, this player is riding a ship (that NetworkObject's id) and Position/Yaw above are LOCAL to
+    // it. Remotes rebuild the world pose against the ship's own transform, so a passenger stays glued to the
+    // deck (no slide/jitter relative to the ship). 0 = on land, Position/Yaw are world.
+    public ulong PlatformId;
+
     public void NetworkSerialize<T>(BufferSerializer<T> s) where T : IReaderWriter
     {
         s.SerializeValue(ref Tick);
@@ -70,6 +75,7 @@ public struct StatePayload : INetworkSerializable, IEquatable<StatePayload>
         s.SerializeValue(ref Speed);
         s.SerializeValue(ref Emote);
         s.SerializeValue(ref JumpStamp);
+        s.SerializeValue(ref PlatformId);
     }
 
     public bool Equals(StatePayload o) =>
@@ -87,7 +93,8 @@ public struct StatePayload : INetworkSerializable, IEquatable<StatePayload>
         MoveY == o.MoveY &&
         Speed == o.Speed &&
         Emote == o.Emote &&
-        JumpStamp == o.JumpStamp;
+        JumpStamp == o.JumpStamp &&
+        PlatformId == o.PlatformId;
 
     public override bool Equals(object obj) => obj is StatePayload o && Equals(o);
     public override int GetHashCode() => Tick;

@@ -111,7 +111,7 @@ public class PlayerCombat : NetworkBehaviour
         if (IsOwner)
         {
             TrackLookMomentum();
-            if (!debugHoldAim) OwnerInput(); // debug: hold the pose, ignore fire/aim input
+            if (!debugHoldAim && !PauseMenu.IsOpen && (_pc == null || !_pc.IsDriving)) OwnerInput();
         }
         DriveAnimation();
     }
