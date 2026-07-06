@@ -48,6 +48,18 @@ public class PlayerCombat : NetworkBehaviour
     [Tooltip("Camera shake (deg) kicked on the owner at the shot, for punchier fire feedback.")]
     [SerializeField] private float cameraShake = 1.4f;
 
+    [Header("Gun bullet (physical + tracer)")]
+    [Tooltip("Damage a gun bullet deals to an enemy NPC. Player bullets = 20.")]
+    [SerializeField] private int gunDamage = 20;
+    [Tooltip("Tracer bullet prefab (fast, trailing). Fired from the held gun's Muzzle along the aim.")]
+    [SerializeField] private GameObject bulletPrefab;
+    [SerializeField] private GameObject bulletImpactFx;
+    [SerializeField] private float bulletSpeed = 95f;
+    [SerializeField] private float bulletGravity = 0f;
+    [SerializeField] private float bulletLife = 1.2f;
+    [Tooltip("Ray origin height above the player's feet, used only when the gun has no Muzzle child.")]
+    [SerializeField] private float gunEyeHeight = 1.5f;
+
     /// <summary>Debug: freeze the player in the gun aim pose (ignores input) so the aim can be tuned in the
     /// Inspector. Toggled by the button on PlayerSpineAim. Not serialized — never persists past play.</summary>
     [System.NonSerialized] public bool debugHoldAim;
@@ -158,8 +170,25 @@ public class PlayerCombat : NetworkBehaviour
     }
 
     [Rpc(SendTo.Server)] private void SetAimRpc(bool a) => _aiming.Value = a;
-    [Rpc(SendTo.Server)] private void FireRpc() { if (_aiming.Value) _fireStamp.Value++; }
+    [Rpc(SendTo.Server)] private void FireRpc() { if (_aiming.Value) { _fireStamp.Value++; ServerFireBullet(); } }
     [Rpc(SendTo.Server)] private void SlashRpc(byte variant) { _slashVariant.Value = variant; _slashStamp.Value++; }
+
+    // Server-authoritative gun shot: a physical tracer bullet from the gun muzzle along the replicated aim.
+    // The server copy carries the damage (Team.Player → only hurts enemies, never other players or ships);
+    // every client spawns a matching cosmetic tracer so the trail is visible everywhere.
+    private void ServerFireBullet()
+    {
+        if (_pc == null || bulletPrefab == null) return;
+        Vector3 origin = _inv != null && _inv.HeldMuzzle != null ? _inv.HeldMuzzle.position : transform.position + Vector3.up * gunEyeHeight;
+        Vector3 vel = _pc.AimDirection.normalized * bulletSpeed;
+        CannonBallProjectile.Spawn(bulletPrefab, origin, vel, bulletGravity, bulletLife, gunDamage,
+            OwnerClientId, Team.Player, true, true, transform, bulletImpactFx, 1f);
+        FireBulletClientRpc(origin, vel);
+    }
+
+    [Rpc(SendTo.NotServer)]
+    private void FireBulletClientRpc(Vector3 pos, Vector3 vel) =>
+        CannonBallProjectile.Spawn(bulletPrefab, pos, vel, bulletGravity, bulletLife, 0, 0UL, Team.Player, false, true, transform, bulletImpactFx, 1f);
 
     private void DriveAnimation()
     {

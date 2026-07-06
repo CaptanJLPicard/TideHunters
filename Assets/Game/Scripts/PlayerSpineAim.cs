@@ -45,9 +45,7 @@ public class PlayerSpineAim : MonoBehaviour
     [SerializeField] private float armMaxYaw = 92f;
     [SerializeField] private float aimBlendSpeed = 6f;
 
-    private PlayerController _pc;
-    private PlayerCombat _combat;
-    private PlayerInventory _inv;
+    private IAimSource _aim;
     private Animator _animator;
     private Transform[] _spine;
     private Transform _rUpperArm, _rLowerArm, _rHand;
@@ -55,9 +53,7 @@ public class PlayerSpineAim : MonoBehaviour
 
     private void Start()
     {
-        _pc = GetComponent<PlayerController>();
-        _combat = GetComponent<PlayerCombat>();
-        _inv = GetComponent<PlayerInventory>();
+        _aim = GetComponent<IAimSource>();
         _animator = GetComponent<Animator>();
 
         var bones = new List<Transform>();
@@ -93,24 +89,24 @@ public class PlayerSpineAim : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (_pc == null || _spine == null || _spine.Length == 0) return;
+        if (_aim == null || _spine == null || _spine.Length == 0) return;
 
-        float pitchTarget = Mathf.Clamp(_pc.AimPitch * pitchGain, -maxPitchBend, maxPitchBend);
+        float pitchTarget = Mathf.Clamp(_aim.AimPitch * pitchGain, -maxPitchBend, maxPitchBend);
         // While walking (and not aiming) fade the yaw twist down so the torso stops swaying as the body turns.
-        float moving = Mathf.Clamp01(_pc.PlanarSpeed / 1.5f);
+        float moving = Mathf.Clamp01(_aim.PlanarSpeed / 1.5f);
         float yawScale = Mathf.Lerp(1f, walkYawScale, moving * (1f - _aimBlend));
-        float yawTarget = Mathf.Clamp(_pc.AimYawOffset, -maxYaw, maxYaw) * yawScale;
+        float yawTarget = Mathf.Clamp(_aim.AimYawOffset, -maxYaw, maxYaw) * yawScale;
 
         float k = 1f - Mathf.Exp(-smoothSharpness * Time.deltaTime);
         _smoothPitch = Mathf.Lerp(_smoothPitch, pitchTarget, k);
         _smoothYaw = Mathf.Lerp(_smoothYaw, yawTarget, k);
 
-        float aimTarget = (_combat != null && _combat.AimingGun) ? 1f : 0f;
+        float aimTarget = (_aim != null && _aim.AimingGun) ? 1f : 0f;
         _aimBlend = Mathf.MoveTowards(_aimBlend, aimTarget, aimBlendSpeed * Time.deltaTime);
 
         // While carrying a chest or steering a ship, leave the spine in the pure carry pose (no aim lean /
         // arm aim). The blend state above keeps decaying, so the aim eases back in smoothly afterward.
-        if ((_inv != null && _inv.IsCarryingChest) || (_pc != null && _pc.IsDriving)) return;
+        if (_aim != null && _aim.SuppressAim) return;
 
         Vector3 right = transform.right, up = transform.up;
         for (int i = 0; i < _spine.Length; i++)
@@ -130,7 +126,7 @@ public class PlayerSpineAim : MonoBehaviour
     /// </summary>
     private void AimArm()
     {
-        if (_aimBlend <= 0.001f || _rUpperArm == null || _rLowerArm == null || _rHand == null || _pc == null) return;
+        if (_aimBlend <= 0.001f || _rUpperArm == null || _rLowerArm == null || _rHand == null || _aim == null) return;
 
         Vector3 gunDir = _rHand.position - _rLowerArm.position;               // forearm ≈ gun barrel
         if (gunDir.sqrMagnitude < 1e-6f) return;
@@ -138,7 +134,7 @@ public class PlayerSpineAim : MonoBehaviour
         // Aim along the REPLICATED aim direction (not the live camera). This is correct for every player and
         // — because it stays frozen while free-look (Alt) orbits the camera — the arm stops tracking the
         // crosshair until free-look is released.
-        Vector3 aimDir = _pc.AimDirection;
+        Vector3 aimDir = _aim.AimDirection;
         Vector3 right = Vector3.Cross(Vector3.up, aimDir);
         right = right.sqrMagnitude > 1e-4f ? right.normalized : transform.right;
         Vector3 target = Quaternion.AngleAxis(aimOffsetEuler.y, Vector3.up)

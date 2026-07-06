@@ -19,7 +19,7 @@ using UnityEngine.InputSystem;
 [DefaultExecutionOrder(-100)]
 [RequireComponent(typeof(CharacterController))]
 [RequireComponent(typeof(Animator))]
-public class PlayerController : NetworkBehaviour
+public class PlayerController : NetworkBehaviour, IAimSource
 {
     [Header("Input")]
     [SerializeField] private InputActionAsset inputAsset;
@@ -56,6 +56,7 @@ public class PlayerController : NetworkBehaviour
     private PlayerAnimator _anim;
     private PlayerCameraRig _cameraRig;
     private PlayerInventory _inv;
+    private PlayerCombat _combat;
     private Vector3 _spawnPos;
     private float _spawnYaw;
     private ShipController _drivingShip;   // the ship this player is currently driving (null = on foot)
@@ -71,6 +72,12 @@ public class PlayerController : NetworkBehaviour
     public ShipController DrivingShip => _drivingShip;
     /// <summary>True while driving OR standing on a ship's deck (so we don't offer to climb aboard again).</summary>
     public bool IsRidingShip => _drivingShip != null || _platform != null;
+
+    private bool _frozen; // dead: input + movement halted, but the deck-carry, state publish and animator keep running
+    /// <summary>Dead-freeze: stop the owner's input/movement, but KEEP riding the deck, replicating the (static)
+    /// pose and driving the animator — so the corpse stays glued to the ship instead of sliding off.</summary>
+    public void SetFrozen(bool v) => _frozen = v;
+    public bool IsFrozen => _frozen;
 
     [Header("Ship camera")]
     [SerializeField] private float shipCamDistance = 15f; // how far the camera sits from the ship while sailing (whole ship in view)
@@ -136,6 +143,12 @@ public class PlayerController : NetworkBehaviour
     /// <summary>World aim direction (where the crosshair points), from replicated yaw+pitch — valid on every client.</summary>
     public Vector3 AimDirection => Quaternion.Euler(_current.Pitch, _current.AimYaw, 0f) * Vector3.forward;
 
+    /// <summary>IAimSource: true while aiming a gun — drives the spine/arm aim IK (shared with enemy NPCs).</summary>
+    public bool AimingGun => _combat != null && _combat.AimingGun;
+
+    /// <summary>IAimSource: hold the pure animated pose (no aim lean/arm aim) while carrying a chest or steering.</summary>
+    public bool SuppressAim => (_inv != null && _inv.IsCarryingChest) || IsDriving;
+
     /// <summary>Kick the owner's camera (e.g. on a gun shot). No-op on non-owners.</summary>
     public void ShakeCamera(float degrees) => _cameraRig?.AddShake(degrees);
 
@@ -143,6 +156,7 @@ public class PlayerController : NetworkBehaviour
     {
         _cc = GetComponent<CharacterController>();
         _inv = GetComponent<PlayerInventory>();
+        _combat = GetComponent<PlayerCombat>();
         _spawnPos = transform.position;
         _spawnYaw = transform.eulerAngles.y;
         _cameraTarget = transform.Find("CameraTarget");
@@ -322,6 +336,7 @@ public class PlayerController : NetworkBehaviour
     private void Update()
     {
         if (!_ownerSim) return;
+        if (_frozen) return; // dead corpse: no input/movement; LateUpdate still carries us on the deck + animates
 
         if (_drivingShip != null) { DriveUpdate(); return; }
 

@@ -43,6 +43,13 @@ public class ShipController : NetworkBehaviour
     /// <summary>All spawned ships (every client), for the interactor's "look at the wheel" check.</summary>
     public static readonly System.Collections.Generic.List<ShipController> Active = new System.Collections.Generic.List<ShipController>();
 
+    /// <summary>Optional AI steering hook. When set AND the server owns the ship (no human driver), the pilot's
+    /// output replaces the keyboard driver — the ship steers itself. Player ships leave this null (unchanged).</summary>
+    public IShipPilot Pilot;
+
+    /// <summary>True while an AI pilot is steering this hull — players may board its deck but not take its wheel.</summary>
+    public bool AiControlled => Pilot != null;
+
     [Header("Sailing (heavy feel)")]
     [SerializeField] private float maxSpeed = 9f;
     [SerializeField] private float accel = 1.1f;        // ramp up while sails are open
@@ -179,6 +186,12 @@ public class ShipController : NetworkBehaviour
                 if (kb.sKey.wasPressedThisFrame) s.SailsOpen = false;  // lower sails  -> coast to a stop
                 turnInput = (kb.aKey.isPressed ? -1f : 0f) + (kb.dKey.isPressed ? 1f : 0f);
             }
+        }
+        else if (IsServer && Pilot != null)
+        {
+            // AI ship: the pilot steers instead of the (absent) human driver. Sailing physics/float/land-blocking below are unchanged.
+            Pilot.GetShipInput(out turnInput, out bool aiSails);
+            s.SailsOpen = aiSails;
         }
         else s.SailsOpen = false; // nobody at the wheel: sails down, drift to a halt
 

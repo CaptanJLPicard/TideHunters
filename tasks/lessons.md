@@ -200,3 +200,45 @@ Tekrarlanan hatalardan kaçınmak için oturumlardan çıkarılan kurallar.
   Runtime drop-spawn için prefab AKTİF `NetworkPrefabsList`'e kayıtlı olmalı (bu projede iki kopya var;
   NetworkManager'ın `NetworkConfig.Prefabs.NetworkPrefabsLists[0]` referansı esas =
   `Assets/Game/ScriptableObjects/NetworkSO/DefaultNetworkPrefabs.asset`).
+
+## Düşman AI gemi & mürettebat (2026-07-06/07)
+- **NPC = Player'ın kopyası, sunucu-yetkili**: `PlayerMotor.Simulate` + `PlayerAnimator` + `StatePayload`
+  (gemi-local + PlatformId) + `DeckRider` (deck-carry) **birebir** yeniden kullanıldı. Server HER ZAMAN
+  otorite (client owner tahmini YOK — player'daki karmaşık predict/reconcile gereksiz); server simüle eder,
+  client'lar player'ın remote-interpolation'ının aynısıyla snapshot interpolate eder. Enemy ship
+  `ShipController`'ı yeniden kullanır: `IShipPilot Pilot` kancası (server sahip + pilot varsa klavye yerine
+  pilot girdisi; player gemisi etkilenmez). `PlayerSpineAim` → `IAimSource` arayüzüne refactor (NPC de aynı
+  spine/kol nişan IK'sını kullanır; PlayerController implemente eder, davranış birebir korunur).
+- **"Gemide/güvertede mi" tespiti Y-EŞİĞİ İLE YAPILMAZ, RAYCAST ile yapılır**: düşük güverte suyun (~-1.6)
+  sadece ~0.1-0.4m üstünde yüzer + dalga bob'u ±0.4 → sabit Y eşiği deck ile suyu ayıramaz. Doğru:
+  noktadan aşağı kısa raycast → o geminin `ShipController`'ına iniyorsa güvertede. Hem `EnemyShipAI.IsOverDeck`
+  (boarder + manned + crew-aboard tespiti) hem deck-carry bunu kullanır.
+- **NPC güverteden düşmesin**: kenar sensörü (DeckAhead) **aşağı eğimli gövdeyi reddetmeli** (`hit.point.y >=
+  feetY-0.5`), yoksa NPC eğik gövdeden suya yürür. Ayrıca NPC'yi post'una `maxRoam` (~3.2m) ile clamp'le →
+  geri çekilirken/dolaşırken denize açılmaz. Suya düşerse `_freeSwim` bayrağı kenar-kısıtını kapatır ki
+  gemiye YÜZEBİLSİN (yoksa suda "her yön kapalı" sanıp donar).
+- **NPC yerinde takılıp koşma-animasyonu (run-in-place) — KESİN ÇÖZÜM**: (a) tıkanınca her frame yön
+  değiştirme (salınım) YERİNE **kararlı bir escape yönüne ~0.65s kilitlen** (post'a doğru temiz yön);
+  (b) ~0.8s hâlâ ilerleyemiyorsa **hard-unstick: post'a doğru 1.6m ışınla** (garantili kurtuluş);
+  (c) `advanced<eşik` iken (ilerlemiyor) animator Speed'i **0'a zorla** → koşu klibi yerine idle. Stall'ı
+  gerçek yer-değişimiyle ölç (intent'le değil).
+- **Sıralı (staggered) ateş şart**: 5 NPC aynı anda ateş = 5×20 = anında ölüm (kaçılamaz). Komutan
+  (`EnemyShipAI.TryReserveFireSlot`) tüm mürettebat için TEK fire-slot verir (`crewFireSpacing` ~0.7s) →
+  sırayla ateş, oyuncu kaçabilir. Mermi **fiziksel + TrailRenderer iz** (hitscan değil) — görünür + kaçılabilir.
+  `CannonBallProjectile` hem top hem tüfek için ortak; `Team` + `hitCharactersOnly` ile dost-ateşi/gemi-ayrımı.
+- **Ceset güvertede kalmalı**: ölünce PlayerController'ı **disable ETME** (deck-carry + remote interpolation
+  durur, ceset denize kayar) → `SetFrozen(true)` ile input'u durdur ama LateUpdate carry + `_netState` publish
+  + animator çalışmaya devam etsin. Dirilince `SetFrozen(false)`.
+- **Gemi mürettebatsız hareket etmez + recall**: `EnemyShipAI` güvertedeki canlı NPC'leri sayar
+  (`CrewAboard`); 0 ise yelken kapalı (hareketsiz). Mod!=Invade iken kendi gemisinde olmayan NPC (`_deckRider
+  .Platform != _homeShip`) `GoHome`'a gider (sudan ya da player gemisinden geri döner) → post → idle → gemi
+  tekrar sailer. CounterBoard yalnız player gemisi `counterBoardRange` içindeyken; kaçarsa recall.
+- **Territory + "manned"**: enemy ship spawn'daki `_homeAnchor` etrafında `territoryRadius`; player gemisi
+  bölge dışıysa VEYA üzerinde canlı oyuncu yoksa (raycast ile "deck'inde duran Team.Player") hedef ALINMAZ.
+  Boarder önce kontrol edilir (bizi board eden oyuncunun kendi gemisi boş görünür ama Repel olmalı).
+- **Cannon parabolü + namlu**: ball hedefe **sabit yükseklik açısıyla** (launchElevation ~24°) atılır, hız
+  mesafeye göre otomatik (hit-solving low-arc değil) → net parabol. Muzzle'ı namlu ucuna koymak için cannon
+  mesh'inin `cannon.forward` yönünde **en uzak vertex'i** = namlu ağzı (AABB köşesi ortadan kaçık verir).
+- **Enemy ship modeli player'dan daha derin oturuyordu** → sahne Y'sini ~1.1m yükselt (deck suyun üstüne
+  çıksın). ShipController `_restY`'yi spawn'da transform.y'den alır, çocuklar (NPC noktaları/muzzle/chest)
+  birlikte yükselir.

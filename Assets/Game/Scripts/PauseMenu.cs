@@ -82,6 +82,8 @@ public class PauseMenu : MonoBehaviour
                 wc.NetworkObject.Despawn(true);
         foreach (var inv in Object.FindObjectsByType<PlayerInventory>(FindObjectsSortMode.None))
             inv.ResetServer();
+        foreach (var h in Health.All.ToArray())
+            if (h != null) h.ResetServer(); // revive everyone on a round restart
 
         nm.SceneManager.LoadScene(SceneManager.GetActiveScene().name, LoadSceneMode.Single);
     }

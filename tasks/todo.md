@@ -1,51 +1,69 @@
-# TODO — Sandık Taşıma Sistemi (Chest Carrying, online)
+# TODO — Düşman AI Gemi & Mürettebat (Faz 1: SmallEnemyShip + 5 NPC)
 
-(Önceki spine-aim / attack / envanter / emote işleri tamamlandı — geçmiş için git log.)
+Spec: `docs/superpowers/specs/2026-07-06-enemy-ai-ship-design.md`
+Kararlar: 5 NPC · sunucu-yetkili ağ-senkron · NavMesh yok · Player sistemleri yeniden kullanılır.
+(Önceki sandık-taşıma görevi tamamlandı — git log.)
 
-Mevcut **silah sistemini birebir aynalayan**, tamamen server-authoritative + Netcode senkron sandık taşıma.
+## Aşama A — Temel scriptler (sahneye dokunmadan, derlensin)
+- [ ] `IDamageable.cs` (TakeDamage arayüzü)
+- [ ] `Health.cs` (NetworkBehaviour, 100 HP, OnChanged, OnDeath, IDamageable)
+- [ ] `ShipHealth.cs` (IDamageable, HealthVisuals mesh'lerini sürer)
+- [ ] `IShipPilot.cs` + `IAimSource.cs` (arayüzler)
+- [ ] `DeckRider.cs` (deck-carry yardımcısı — PlayerController mantığı)
+- [ ] `ShipController.cs`: `IShipPilot Pilot` kancası + `AiControlled` (geriye-uyumlu)
+- [ ] Derle (`assets-refresh`) + konsol temiz mi kontrol
 
-## Kararlar (kullanıcı onaylı)
-- Prompt dili: **İngilizce** (mevcut HUD stiliyle; "Press E to carry ...").
-- Taşırken hareket: **yavaşla + koşamaz** (walk-only + hafif çarpan).
-- Slot modeli: **serbest** — sandık bir slotta durur (ikonu görünür), 1-4 ile silaha geçilebilir. Sandık slotu seçiliyken sandık elde görünür + Carrying animasyonu oynar. G ile bırakılır.
-- Animasyon: tek `Carrying.anim` (humanoid, looping) → yeni **"Carry" üst-vücut animator katmanı**, ağırlık `IsCarryingChest`'e göre 0→1. Bacaklar taban locomotion'dan.
+## Aşama B — Düşman gemisi hareket + top
+- [ ] `EnemyShipAI.cs` (IShipPilot: burun oyuncuya, menzil koru; komutan iskeleti)
+- [ ] `ShipCannon.cs` (menzilli CannonBall ateşi; sunucu hasar, RPC kozmetik)
+- [ ] Sahne: SmallEnemyShip'e NetworkObject + ShipController + EnemyShipAI + ShipHealth; dalga paramları player ile aynı; shipWheel = SM_Prop_ShipWheel_01
+- [ ] EnemyShipLargeCannon'a Muzzle noktası + ShipCannon
+- [ ] `PlayerInteractor.cs`: AiControlled gemide dümen atlansın
+- [ ] Test: host'ta Play → gemi yüzüyor, burun oyuncuya dönüyor, top ateşliyor (screenshot)
 
-## Yeni script'ler
-- [ ] `ChestTypes.cs` — `ChestId` enum + `ChestDef`.
-- [ ] `ChestDatabase.cs` — Resources ScriptableObject (kendi dosyasında).
-- [ ] `WorldChest.cs` — `NetworkBehaviour`, `static Active`, `Chest`, `AimPoint`.
-- [ ] `PlayerCarry.cs` — sandık görseli (CarryAnchor) + "Carry" katman ağırlığı.
+## Aşama C — NPC iskelet (motor + anim + deck-carry + sensör)
+- [ ] `EnemyNpcAnimator.controller` (PlayerAnimator kopyası + Posture katmanı)
+- [ ] `EnemyNpcController.cs` (ağ StatePayload replikasyon + PlayerMotor + PlayerAnimator + DeckRider + sensörler + Health)
+- [ ] `PlayerSpineAim.cs` → IAimSource refactor; PlayerController implemente eder
+- [ ] Sahne: Enemy_NPC kur (CharacterController, Health, controller, HeavyGun+Muzzle sağ ele, spine-aim) → prefab yap → 5 nokta yerleştir
+- [ ] Test: 5 NPC noktalarında doğru idle, gemi sallanınca güvertede stabil (screenshot)
 
-## Değişecek script'ler
-- [ ] `PlayerInventory.cs` — `InvState` chest slotları, `AddChestServer` (+auto-select), G drop yönlendirme, `DropChestServer`, `SelectedChest`, `IsCarryingChest`, `HasEmptySlot`, `GetChestSlot`.
-- [ ] `PlayerInteractor.cs` — sandık look-at prompt + `CarryChestRpc`.
-- [ ] `PlayerController.cs` — taşırken sprint kapalı + slowdown, `_inv`.
-- [ ] `PlayerSpineAim.cs` — taşırken gövde eğmesini atla.
-- [ ] `GameHUD.cs` — sandık slot ikonu.
+## Aşama D — Beyin (durum makinesi) + combat
+- [ ] EnemyShipAI: PEACEFUL/ALARM/REPEL/CHEST/COUNTER-BOARD/RESET + NPC rol dağıtımı
+- [ ] NPC: alarm dolaşma (kenar sensörü + NPC-NPC ayrışma), HeavyGun ateş (sunucu hitscan 20)
+- [ ] NPC aboard (oyuncu gemisine suya atla + DeckBoardPoint)
+- [ ] `PlayerCombat.cs`: FireRpc hitscan → IDamageable 20 (oyuncu NPC'yi vurur)
+- [ ] Test: aboard→REPEL, sandık önceliği, counter-board
 
-## Editör/asset işleri (MCP)
-- [ ] `assets-refresh` + console hata kontrolü.
-- [ ] Animator: "Carry" katmanı (UpperBody mask) + "Carry" state (Carrying.anim, looping), ağırlık 0.
-- [ ] Sandık prefab'ları: kök'e `NetworkObject` + `WorldChest` (chestType). Collider var.
-- [ ] `ChestDatabase.asset` (Resources) — 3 def + ikonlar.
-- [ ] Aktif `NetworkPrefabsList` (id 82926)'e 3 sandık prefab'ı kaydet.
-- [ ] Player prefab'a `PlayerCarry`.
-- [ ] Sahne kaydet (in-scene NetworkObject'ler).
+## Aşama E — Player Sağlık UI
+- [ ] `Player.prefab`: Health (100)
+- [ ] `Canvas/GamePanel` altına HealthBar (envanter slot art style)
+- [ ] `GameHUD.cs`: yerel oyuncu Health.OnChanged → bar
+- [ ] Test: hasar alınca bar düşüyor
 
-## Doğrulama
-- [x] Play mode host: bak→animasyonlu "Press E to carry"→E→elde+Carrying anim+slot ikonu→G bırak. (screenshot doğrulandı)
-- [x] Sandık ellerin ortasını takip ediyor → gövde/kollarla sway (log: visualPos = handsMid + offset).
-- [x] Doluluk: 4 slot dolu → "Not enough space" (screenshot).
-- [x] In-scene 3 sandık host'ta NetworkObject olarak spawn (WorldChest.Active=3), drop→yeni WorldChest.
-- [x] Bırakılan sandık zemine oturuyor (collider tabanı → zemin snap, screenshot).
-- [x] Boyut sabit (carryScale=1, dünyadakiyle aynı).
-- [~] Online remote (MPPM 2 instance): replike InvState'ten türetildiği için silah sistemiyle aynı mekanik; kod review ile denetlendi (canlı 2. istemci testi yapılmadı).
-- [x] Taşıma offset canlı (ChestDatabase'den her frame okunur) → inspector'dan runtime tuning.
-- [x] Adversarial kod review workflow (netcode + correctness) çalıştırıldı.
+## Aşama F — Cila + doğrulama
+- [ ] Konsol tam temiz (compile + runtime)
+- [ ] Uçtan uca oyun akışı testi (screenshot serisi)
+- [ ] Adversarial kod incelemesi
 
 ## Review
-Silah sistemi birebir aynalandı; sandık = slot item, WorldChest = DroppedWeapon muadili, PlayerCarry =
-PlayerCombat'ın carry karşılığı. Yeni ağ durumu minimal (genişletilmiş InvState + intrinsic chest tipi).
-Kullanıcı iterasyonları: (1) sway → el-takibi, (2) runtime offset → ChestDatabase canlı okuma,
-(3) sabit boyut → carryScale=1, (4) zemine oturma → collider-taban snap. Tümü play mode'da doğrulandı.
-Kalan: taşıma offset'lerinin görsel ince ayarı kullanıcıya bırakıldı (ChestDatabase.asset).
+Faz 1 tamamlandı ve play mode'da (host) uçtan uca doğrulandı — sıfır compile/runtime hatası.
+
+**Mimari:** NPC = "Player'ın kopyası" — `PlayerMotor.Simulate` + `PlayerAnimator` + `StatePayload` replikasyonu +
+`DeckRider` (deck-carry) birebir yeniden kullanıldı; sadece beyin/sensör/combat/sağlık yazıldı. Enemy ship
+`ShipController`'ı yeniden kullanır (`IShipPilot` kancasıyla AI dümen). `PlayerSpineAim` → `IAimSource` arayüzüne
+refactor edildi (NPC de aynı nişan IK'sını kullanır). Hepsi sunucu-yetkili.
+
+**Doğrulanan davranışlar:**
+- Enemy ship yüzer (Gerstner buoyancy), burnunu manned oyuncu gemisine çevirir, top **parabol** çizerek namlu
+  ucundan ateşler (menzilli). Gemi ~1.1m yükseltildi (player gemisi gibi düzgün su hattı).
+- 5 NPC noktalarında doğru idle: Cannon/Ammo→Kneel, Idle→Warrior, Sitting→Sit, Driver→Carry.
+- Alarm→devriye (kenardan düşmez; düşerse GoHome ile geri biner; takılırsa hard-unstick).
+- Repel→mesafe koru + **sıralı (staggered) HeavyGun ateşi** (komutan fire-slot) → kaçılabilir; fiziksel mermi + trail iz.
+- Counter-board→suya atlayıp player gemisine aboard. Player kaçarsa/gemi boşalırsa recall → noktalara + idle → gemi tekrar sailer.
+- Sağlık: player+NPC 100hp, 20 hasar; player HP UI (envanter-slot stili) Canvas'ta. Ölünce YOU DIED paneli
+  (host restart / client değil / main menu), ceset güvertede stabil kalır, "Die" anim kancası hazır (kullanıcı klibi verince bağlanacak).
+- Territory + "manned" kontrolü: bölge dışı ya da **boş** player gemisi hedef alınmaz; mürettebatsız gemi hareket etmez.
+
+**Kalan (kullanıcı):** Ölüm animasyon klibi verilince `Die` state'ine bağlanacak; balans tunable'ları
+(crewFireSpacing, gunDamage, ranges) inspector'dan ayarlanabilir. Git commit ATILMADI (kullanıcı izni bekleniyor).

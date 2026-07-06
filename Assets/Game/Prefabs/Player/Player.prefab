@@ -205,6 +205,8 @@ GameObject:
   - component: {fileID: 2996994312932433224}
   - component: {fileID: 7921270033944659257}
   - component: {fileID: 4911601853964136531}
+  - component: {fileID: 7697455889913277694}
+  - component: {fileID: 3050398514549483644}
   m_Layer: 0
   m_Name: Player
   m_TagString: Player
@@ -295,6 +297,8 @@ MonoBehaviour:
   interpolationTicks: 2
   animDampTime: 0.15
   carrySpeedMultiplier: 0.8
+  shipCamDistance: 15
+  shipCamPitch: 8
 --- !u!95 &707869856084543133
 Animator:
   serializedVersion: 7
@@ -395,6 +399,7 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   range: 2.6
   aimAngle: 18
+  boardRange: 5.5
 --- !u!114 &7921270033944659257
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -420,6 +425,13 @@ MonoBehaviour:
   muzzleFxEuler: {x: 0, y: 0, z: 0}
   muzzleFxScale: 0.5
   cameraShake: 1.4
+  gunDamage: 20
+  bulletPrefab: {fileID: 27299688354101545, guid: dc448cf0e158f4b43975cab630f63214, type: 3}
+  bulletImpactFx: {fileID: 0}
+  bulletSpeed: 78
+  bulletGravity: 0
+  bulletLife: 1.2
+  gunEyeHeight: 1.5
 --- !u!114 &4911601853964136531
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -433,8 +445,37 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerCarry
   ShowTopMostFoldoutHeaderGroup: 1
-  anchorLocalPos: {x: 0, y: 0.95, z: 0.34}
   weightSharpness: 10
+  armRaiseSharpness: 7
+  moveSharpness: 5
+--- !u!114 &7697455889913277694
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 513321917047699477}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a06c62fafd07470458f7ede42e1a8f66, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Health
+  ShowTopMostFoldoutHeaderGroup: 1
+  maxHealth: 100
+  team: 0
+--- !u!114 &3050398514549483644
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 513321917047699477}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1af3e1389ca5aa44fabe60a8899a3262, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerDeath
+  ShowTopMostFoldoutHeaderGroup: 1
 --- !u!1 &1010120301404727160
 GameObject:
   m_ObjectHideFlags: 0
