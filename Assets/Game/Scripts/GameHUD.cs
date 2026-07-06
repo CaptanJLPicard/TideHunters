@@ -95,13 +95,17 @@ public class GameHUD : MonoBehaviour
     private void Refresh()
     {
         if (_inv == null) return;
-        var db = WeaponDatabase.Instance;
+        var wdb = WeaponDatabase.Instance;
+        var cdb = ChestDatabase.Instance;
         for (int i = 0; i < _slotInner.Length; i++)
         {
             bool sel = i == _inv.SelectedSlot;
             if (_slotInner[i] != null) _slotInner[i].color = sel ? GoldColor : WoodColor;
-            var w = _inv.GetSlot(i);
-            var icon = db != null ? db.IconOf(w) : null;
+            // A slot holds a weapon XOR a chest — show whichever it is.
+            var chest = _inv.GetChestSlot(i);
+            var icon = chest != ChestId.None
+                ? (cdb != null ? cdb.IconOf(chest) : null)
+                : (wdb != null ? wdb.IconOf(_inv.GetSlot(i)) : null);
             if (_slotIcon[i] != null) { _slotIcon[i].sprite = icon; _slotIcon[i].enabled = icon != null; }
         }
     }

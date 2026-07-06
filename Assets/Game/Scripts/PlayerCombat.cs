@@ -216,6 +216,9 @@ public class PlayerCombat : NetworkBehaviour
                 else
                     _animator.CrossFadeInFixedTime(hash, 0.1f, _upperLayer, 0f);
             }
+            // If the held weapon went away mid-swing (e.g. a chest pickup auto-selected its slot), cancel the
+            // slash so the UpperBody layer drops instead of playing an empty-handed swing over the carry pose.
+            if (_slashing && (_inv == null || !_inv.HasWeaponEquipped)) _slashing = false;
             if (_slashing)
             {
                 targetWeight = 1f;

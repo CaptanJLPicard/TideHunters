@@ -47,6 +47,7 @@ public class PlayerSpineAim : MonoBehaviour
 
     private PlayerController _pc;
     private PlayerCombat _combat;
+    private PlayerInventory _inv;
     private Animator _animator;
     private Transform[] _spine;
     private Transform _rUpperArm, _rLowerArm, _rHand;
@@ -56,6 +57,7 @@ public class PlayerSpineAim : MonoBehaviour
     {
         _pc = GetComponent<PlayerController>();
         _combat = GetComponent<PlayerCombat>();
+        _inv = GetComponent<PlayerInventory>();
         _animator = GetComponent<Animator>();
 
         var bones = new List<Transform>();
@@ -105,6 +107,11 @@ public class PlayerSpineAim : MonoBehaviour
 
         float aimTarget = (_combat != null && _combat.AimingGun) ? 1f : 0f;
         _aimBlend = Mathf.MoveTowards(_aimBlend, aimTarget, aimBlendSpeed * Time.deltaTime);
+
+        // While carrying a chest, leave the spine in the pure carry pose (no aim lean / arm aim). The blend
+        // state above keeps decaying (AimingGun is false while carrying), so the aim eases back in smoothly
+        // when carry ends instead of snapping.
+        if (_inv != null && _inv.IsCarryingChest) return;
 
         Vector3 right = transform.right, up = transform.up;
         for (int i = 0; i < _spine.Length; i++)

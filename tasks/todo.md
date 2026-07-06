@@ -1,25 +1,51 @@
-# TODO — Spine Aim + Attack & Inventory System (online)
+# TODO — Sandık Taşıma Sistemi (Chest Carrying, online)
 
-(Önceki TPS/hareket/kamera/yüzme/FOV işleri tamamlandı — geçmiş için git log.)
+(Önceki spine-aim / attack / envanter / emote işleri tamamlandı — geçmiş için git log.)
 
-## Faz A — Spine aim (omurga nişan eğimi)  ✅ TAMAM
-- [x] `PlayerNetTypes`: `Pitch` (InputCommand + StatePayload) — bakış açısı senkron.
-- [x] `PlayerCameraRig.Pitch` property; `PlayerMotor` Pitch→state; `PlayerController.AimPitch`.
-- [x] `PlayerSpineAim.cs` (exec order 200): Spine/Chest/UpperChest'i pitch'e göre eğer. Prefab'a eklendi (pitchGain 0.4, maxBend 35).
-- [x] Test: lookDOWN head +0.168 (öne), lookUP -0.092 (geri) — doğru yön, doğrulandı. 0 exception.
+Mevcut **silah sistemini birebir aynalayan**, tamamen server-authoritative + Netcode senkron sandık taşıma.
 
-## Faz B — Attack & Inventory (onaylı: kılıç+gun üst-beden overlay; dükkan item tükenir; boş elle saldırı yok)
-### Çekirdek envanter döngüsü ✅ TAMAM (host'ta test edildi)
-- [x] `WeaponTypes.cs` (WeaponId/Category/Def/Database SO) + `WeaponDatabase.asset` (Resources, 4 silah + ikonlar).
-- [x] `PlayerInventory : NetworkBehaviour`: 4 slot + seçili (server-auth NetworkVariable). Kuşanılan silah Hand_R'a instantiate.
-- [x] `GameHUD` hotbar (alt-orta 4 kare, 1-4 seç, vurgu, **silah adı + ikon**). Slot input (1-4).
-- [x] `ShopManager` (düz sahne obj, ağ değil) + `PlayerInteractor` (E ile kuşan, server consume + HideShopItemRpc). `WorldPrompt` GameHUD'da.
-- [x] Silah ikonları render edilip WeaponDatabase'e atandı (hotbar'da görünüyor).
-### Kalan
-- [ ] **Held weapon hold-offset tuning**: WeaponDatabase'de her silahın holdPosition/Euler/Scale'i ele oturacak şekilde ayarla.
-- [ ] Drop (G): `DroppedWeapon` NetworkObject, öne/yana bırak, bobbing, E ile topla.
-- [ ] **Attack + Gun aim akışı** (kullanıcı spec): sağ tık = aim → GunPlay frame ~60'a kadar oyna + DON; sol tık = 60+ oyna + ateş; sağ tık bırak = normal anim. Sword = 2 slash random, üst-beden. Attack RPC senkron. UpperBody layer.
-- [ ] Emote çarkı (Z basılı → radyal + imleç → bırakınca emote); 3/4/5 emote'ları kaldır.
+## Kararlar (kullanıcı onaylı)
+- Prompt dili: **İngilizce** (mevcut HUD stiliyle; "Press E to carry ...").
+- Taşırken hareket: **yavaşla + koşamaz** (walk-only + hafif çarpan).
+- Slot modeli: **serbest** — sandık bir slotta durur (ikonu görünür), 1-4 ile silaha geçilebilir. Sandık slotu seçiliyken sandık elde görünür + Carrying animasyonu oynar. G ile bırakılır.
+- Animasyon: tek `Carrying.anim` (humanoid, looping) → yeni **"Carry" üst-vücut animator katmanı**, ağırlık `IsCarryingChest`'e göre 0→1. Bacaklar taban locomotion'dan.
+
+## Yeni script'ler
+- [ ] `ChestTypes.cs` — `ChestId` enum + `ChestDef`.
+- [ ] `ChestDatabase.cs` — Resources ScriptableObject (kendi dosyasında).
+- [ ] `WorldChest.cs` — `NetworkBehaviour`, `static Active`, `Chest`, `AimPoint`.
+- [ ] `PlayerCarry.cs` — sandık görseli (CarryAnchor) + "Carry" katman ağırlığı.
+
+## Değişecek script'ler
+- [ ] `PlayerInventory.cs` — `InvState` chest slotları, `AddChestServer` (+auto-select), G drop yönlendirme, `DropChestServer`, `SelectedChest`, `IsCarryingChest`, `HasEmptySlot`, `GetChestSlot`.
+- [ ] `PlayerInteractor.cs` — sandık look-at prompt + `CarryChestRpc`.
+- [ ] `PlayerController.cs` — taşırken sprint kapalı + slowdown, `_inv`.
+- [ ] `PlayerSpineAim.cs` — taşırken gövde eğmesini atla.
+- [ ] `GameHUD.cs` — sandık slot ikonu.
+
+## Editör/asset işleri (MCP)
+- [ ] `assets-refresh` + console hata kontrolü.
+- [ ] Animator: "Carry" katmanı (UpperBody mask) + "Carry" state (Carrying.anim, looping), ağırlık 0.
+- [ ] Sandık prefab'ları: kök'e `NetworkObject` + `WorldChest` (chestType). Collider var.
+- [ ] `ChestDatabase.asset` (Resources) — 3 def + ikonlar.
+- [ ] Aktif `NetworkPrefabsList` (id 82926)'e 3 sandık prefab'ı kaydet.
+- [ ] Player prefab'a `PlayerCarry`.
+- [ ] Sahne kaydet (in-scene NetworkObject'ler).
+
+## Doğrulama
+- [x] Play mode host: bak→animasyonlu "Press E to carry"→E→elde+Carrying anim+slot ikonu→G bırak. (screenshot doğrulandı)
+- [x] Sandık ellerin ortasını takip ediyor → gövde/kollarla sway (log: visualPos = handsMid + offset).
+- [x] Doluluk: 4 slot dolu → "Not enough space" (screenshot).
+- [x] In-scene 3 sandık host'ta NetworkObject olarak spawn (WorldChest.Active=3), drop→yeni WorldChest.
+- [x] Bırakılan sandık zemine oturuyor (collider tabanı → zemin snap, screenshot).
+- [x] Boyut sabit (carryScale=1, dünyadakiyle aynı).
+- [~] Online remote (MPPM 2 instance): replike InvState'ten türetildiği için silah sistemiyle aynı mekanik; kod review ile denetlendi (canlı 2. istemci testi yapılmadı).
+- [x] Taşıma offset canlı (ChestDatabase'den her frame okunur) → inspector'dan runtime tuning.
+- [x] Adversarial kod review workflow (netcode + correctness) çalıştırıldı.
 
 ## Review
-- [ ] Her faz play-mode host testi, 0 exception. MPPM 2-oyunculu senkron (imkan olursa).
+Silah sistemi birebir aynalandı; sandık = slot item, WorldChest = DroppedWeapon muadili, PlayerCarry =
+PlayerCombat'ın carry karşılığı. Yeni ağ durumu minimal (genişletilmiş InvState + intrinsic chest tipi).
+Kullanıcı iterasyonları: (1) sway → el-takibi, (2) runtime offset → ChestDatabase canlı okuma,
+(3) sabit boyut → carryScale=1, (4) zemine oturma → collider-taban snap. Tümü play mode'da doğrulandı.
+Kalan: taşıma offset'lerinin görsel ince ayarı kullanıcıya bırakıldı (ChestDatabase.asset).

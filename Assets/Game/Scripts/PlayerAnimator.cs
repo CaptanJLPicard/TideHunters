@@ -30,6 +30,10 @@ public class PlayerAnimator
     private int _lastJumpStamp;
     private bool _initialised;
 
+    /// <summary>Multiplier on the grounded-locomotion playback speed. Set below 1 when the body's ground
+    /// speed is reduced (e.g. while carrying a chest) so the walk clip's feet stay planted instead of skating.</summary>
+    public float LocomotionScale = 1f;
+
     public PlayerAnimator(Animator animator, float dampTime, float walkSpeed, float runSpeed,
         float swimSpeed, float swimSprintSpeed)
     {
@@ -59,7 +63,7 @@ public class PlayerAnimator
         {
             float walkMult = _walkSpeed / WalkStride;
             float runMult = _runSpeed / RunStride;
-            animSpeed = Mathf.Lerp(walkMult, runMult, Mathf.InverseLerp(0.5f, 1f, s.Speed));
+            animSpeed = Mathf.Lerp(walkMult, runMult, Mathf.InverseLerp(0.5f, 1f, s.Speed)) * LocomotionScale;
         }
         else if (s.IsSwimming && s.Speed > 0.05f && s.Sprinting)
         {

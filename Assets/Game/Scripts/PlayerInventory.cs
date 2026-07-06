@@ -4,10 +4,14 @@ using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-/// <summary>Replicated inventory: 4 weapon slots + the selected slot. Byte-packed for cheap sync.</summary>
+/// <summary>
+/// Replicated inventory: 4 slots + the selected slot. Each slot holds a weapon XOR a chest (both byte
+/// ids, so the whole thing packs cheaply for sync).
+/// </summary>
 public struct InvState : INetworkSerializable, IEquatable<InvState>
 {
     public byte S0, S1, S2, S3; // WeaponId per slot
+    public byte C0, C1, C2, C3; // ChestId per slot (a slot is a weapon XOR a chest)
     public byte Selected;       // 0..3
 
     public WeaponId Get(int i) => (WeaponId)(i == 0 ? S0 : i == 1 ? S1 : i == 2 ? S2 : S3);
@@ -17,20 +21,40 @@ public struct InvState : INetworkSerializable, IEquatable<InvState>
         if (i == 0) S0 = b; else if (i == 1) S1 = b; else if (i == 2) S2 = b; else S3 = b;
     }
 
+    public ChestId GetChest(int i) => (ChestId)(i == 0 ? C0 : i == 1 ? C1 : i == 2 ? C2 : C3);
+    public void SetChest(int i, ChestId v)
+    {
+        byte b = (byte)v;
+        if (i == 0) C0 = b; else if (i == 1) C1 = b; else if (i == 2) C2 = b; else C3 = b;
+    }
+
+    /// <summary>A slot is free only when it holds neither a weapon nor a chest.</summary>
+    public bool SlotEmpty(int i) => Get(i) == WeaponId.None && GetChest(i) == ChestId.None;
+
     public void NetworkSerialize<T>(BufferSerializer<T> s) where T : IReaderWriter
     {
         s.SerializeValue(ref S0); s.SerializeValue(ref S1); s.SerializeValue(ref S2); s.SerializeValue(ref S3);
+        s.SerializeValue(ref C0); s.SerializeValue(ref C1); s.SerializeValue(ref C2); s.SerializeValue(ref C3);
         s.SerializeValue(ref Selected);
     }
-    public bool Equals(InvState o) => S0 == o.S0 && S1 == o.S1 && S2 == o.S2 && S3 == o.S3 && Selected == o.Selected;
+
+    public bool Equals(InvState o) =>
+        S0 == o.S0 && S1 == o.S1 && S2 == o.S2 && S3 == o.S3 &&
+        C0 == o.C0 && C1 == o.C1 && C2 == o.C2 && C3 == o.C3 &&
+        Selected == o.Selected;
     public override bool Equals(object obj) => obj is InvState o && Equals(o);
-    public override int GetHashCode() => (S0 << 24) | (S1 << 16) | (S2 << 8) | Selected;
+    public override int GetHashCode()
+    {
+        int h = (S0 << 24) | (S1 << 16) | (S2 << 8) | Selected;
+        return h ^ ((C0 << 24) | (C1 << 16) | (C2 << 8) | C3);
+    }
 }
 
 /// <summary>
-/// Server-authoritative weapon inventory. Holds 4 slots and a selected index, replicated to everyone.
-/// The weapon in the selected slot is shown parented to the right hand on every client (owner and
-/// remotes) so what you hold is always in sync. The owner picks slots with keys 1-4.
+/// Server-authoritative inventory. Holds 4 slots (each a weapon or a chest) and a selected index,
+/// replicated to everyone. The item in the selected slot is shown on every client: a weapon parented to the
+/// hand, or — for a chest — carried in the arms (see <see cref="PlayerCarry"/>), so what you hold is always
+/// in sync. The owner picks slots with keys 1-4 and drops the selected item with G.
 /// </summary>
 [RequireComponent(typeof(NetworkObject))]
 public class PlayerInventory : NetworkBehaviour
@@ -47,15 +71,30 @@ public class PlayerInventory : NetworkBehaviour
     private WeaponId _shownWeapon = WeaponId.None;
     private PlayerCombat _combat;
 
-    /// <summary>Raised on every client whenever the inventory or selection changes (for the hotbar UI).</summary>
+    /// <summary>Raised on every client whenever the inventory or selection changes (for the hotbar UI + carry visual).</summary>
     public event Action OnChanged;
 
     public int SelectedSlot => _inv.Value.Selected;
     public WeaponId GetSlot(int i) => _inv.Value.Get(i);
+    public ChestId GetChestSlot(int i) => _inv.Value.GetChest(i);
     public WeaponId SelectedWeapon => _inv.Value.Get(_inv.Value.Selected);
+    public ChestId SelectedChest => _inv.Value.GetChest(_inv.Value.Selected);
+    public bool IsCarryingChest => SelectedChest != ChestId.None;
+    // A chest slot never holds a weapon, so this is naturally false while carrying — combat/aim stay off.
     public bool HasWeaponEquipped => SelectedWeapon != WeaponId.None;
     // Derive from the id (not the database) so a missing/broken database can never make a gun slash like a sword.
     public WeaponCategory SelectedCategory => WeaponDatabase.CategoryFor(SelectedWeapon);
+
+    /// <summary>True when at least one slot is completely free (no weapon and no chest) — a chest can be taken.</summary>
+    public bool HasEmptySlot
+    {
+        get
+        {
+            var s = _inv.Value;
+            for (int i = 0; i < SlotCount; i++) if (s.SlotEmpty(i)) return true;
+            return false;
+        }
+    }
 
     /// <summary>Muzzle transform (a "Muzzle" child) of the currently-held weapon, or null. Used to spawn gun fire FX.</summary>
     public Transform HeldMuzzle =>
@@ -114,14 +153,20 @@ public class PlayerInventory : NetworkBehaviour
         if (IsServer) DropSelectedServer(); else DropRpc();
     }
 
-    [Rpc(SendTo.Server)]
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
     private void DropRpc() { DropSelectedServer(); }
 
-    /// <summary>Server: drop the selected weapon in front of the player as a pickup and clear its slot.</summary>
+    /// <summary>Server: drop the selected item in front of the player (a chest as a WorldChest, otherwise a
+    /// weapon pickup) and clear its slot.</summary>
     private void DropSelectedServer()
     {
-        if (!IsServer || droppedWeaponPrefab == null) return;
+        if (!IsServer) return;
         var s = _inv.Value;
+
+        ChestId chest = s.GetChest(s.Selected);
+        if (chest != ChestId.None) { DropChestServer(chest); return; }
+
+        if (droppedWeaponPrefab == null) return;
         WeaponId id = s.Get(s.Selected);
         if (id == WeaponId.None) return;
         s.Set(s.Selected, WeaponId.None);
@@ -134,19 +179,44 @@ public class PlayerInventory : NetworkBehaviour
         go.GetComponent<DroppedWeapon>().SetWeaponServer(id);
     }
 
+    /// <summary>Server: put the carried chest back into the world in front of the player and clear its slot.</summary>
+    private void DropChestServer(ChestId chest)
+    {
+        var db = ChestDatabase.Instance;
+        var def = db != null ? db.Get(chest) : null;
+        if (def == null || def.worldPrefab == null) return;
+
+        var s = _inv.Value;
+        s.SetChest(s.Selected, ChestId.None);
+        _inv.Value = s;
+
+        // Drop point in front of the player; raycast down to find the ground under it.
+        Vector3 dropXZ = transform.position + transform.forward * 1.3f;
+        float groundY = transform.position.y;
+        if (Physics.Raycast(dropXZ + Vector3.up * 3f, Vector3.down, out var hit, 12f, ~0, QueryTriggerInteraction.Ignore))
+            groundY = hit.point.y;
+
+        var go = Instantiate(def.worldPrefab, new Vector3(dropXZ.x, groundY, dropXZ.z),
+            Quaternion.Euler(0f, transform.eulerAngles.y, 0f));
+
+        // Snap so the chest's collider bottom rests exactly on the ground (independent of the prefab's pivot).
+        Physics.SyncTransforms();
+        var col = go.GetComponentInChildren<Collider>();
+        if (col != null) go.transform.position += Vector3.up * (groundY - col.bounds.min.y);
+
+        go.GetComponent<NetworkObject>().Spawn(true);
+    }
+
     // ---- Owner requests → server ---------------------------------------------------------
 
     public void RequestSelectSlot(int slot) { if (IsOwner) SelectSlotRpc((byte)Mathf.Clamp(slot, 0, SlotCount - 1)); }
-    public void RequestPickup(WeaponId id) { if (IsOwner) PickupRpc(id); }
 
-    [Rpc(SendTo.Server)]
+    // Owner-only + server-side clamped: never trust a client-supplied slot index.
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
     private void SelectSlotRpc(byte slot)
     {
-        var s = _inv.Value; s.Selected = slot; _inv.Value = s;
+        var s = _inv.Value; s.Selected = (byte)Mathf.Clamp(slot, 0, SlotCount - 1); _inv.Value = s;
     }
-
-    [Rpc(SendTo.Server)]
-    private void PickupRpc(WeaponId id) => AddWeaponServer(id);
 
     // ---- Server logic --------------------------------------------------------------------
 
@@ -159,7 +229,7 @@ public class PlayerInventory : NetworkBehaviour
         if (!IsServer || id == WeaponId.None) return false;
         var s = _inv.Value;
 
-        if (s.Get(s.Selected) == WeaponId.None)
+        if (s.SlotEmpty(s.Selected))
         {
             s.Set(s.Selected, id);
             _inv.Value = s;
@@ -167,7 +237,7 @@ public class PlayerInventory : NetworkBehaviour
         }
         for (int i = 0; i < SlotCount; i++)
         {
-            if (s.Get(i) == WeaponId.None)
+            if (s.SlotEmpty(i))
             {
                 s.Set(i, id);
                 _inv.Value = s;
@@ -177,10 +247,33 @@ public class PlayerInventory : NetworkBehaviour
         return false; // full
     }
 
+    /// <summary>
+    /// Adds a chest to the selected slot if it is empty, else to the first empty slot — and selects that
+    /// slot so the player starts carrying it immediately (a held weapon is hidden while the chest is held).
+    /// False if every slot is occupied.
+    /// </summary>
+    public bool AddChestServer(ChestId id)
+    {
+        if (!IsServer || id == ChestId.None) return false;
+        var s = _inv.Value;
+
+        int target = -1;
+        if (s.SlotEmpty(s.Selected)) target = s.Selected;
+        else { for (int i = 0; i < SlotCount; i++) if (s.SlotEmpty(i)) { target = i; break; } }
+        if (target < 0) return false; // full
+
+        s.SetChest(target, id);
+        s.Selected = (byte)target; // auto-select → carry it now
+        _inv.Value = s;
+        return true;
+    }
+
     // ---- Held weapon visual (every client) -----------------------------------------------
 
     private void ApplyHeld()
     {
+        // A chest slot has WeaponId.None, so selecting a chest hides every weapon here; PlayerCarry then
+        // shows the chest.
         WeaponId want = SelectedWeapon;
         if (want == _shownWeapon) return;
         _shownWeapon = want;

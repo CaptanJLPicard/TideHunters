@@ -3,23 +3,25 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// Owner-only interaction. Finds the nearest available shop item, shows the "Press E to equip …"
-/// prompt, and on E asks the server to add it to this player's inventory. The server validates and
-/// consumes it, then tells every client to hide it — server-authoritative, no per-item network object.
+/// Owner-only interaction. Finds the shop item / world chest under the crosshair (or the nearest dropped
+/// weapon), shows the animated "Press E to …" prompt, and on E asks the server to act. The server validates
+/// and applies it (consume a shop item, carry a chest, pick up a drop), staying authoritative.
 /// </summary>
 [RequireComponent(typeof(PlayerInventory))]
 public class PlayerInteractor : NetworkBehaviour
 {
-    [Tooltip("Max distance from the player to a shop item to interact with it.")]
+    [Tooltip("Max distance from the player to an item to interact with it.")]
     [SerializeField] private float range = 4.5f;
     [Tooltip("How wide (deg) around the crosshair an item still counts as 'looked at'. Larger = more forgiving.")]
     [SerializeField] private float aimAngle = 18f;
 
     private PlayerInventory _inv;
+    private PlayerCombat _combat;
 
     public override void OnNetworkSpawn()
     {
         _inv = GetComponent<PlayerInventory>();
+        _combat = GetComponent<PlayerCombat>();
     }
 
     private void Update()
@@ -39,7 +41,26 @@ public class PlayerInteractor : NetworkBehaviour
             return;
         }
 
-        // 2) Otherwise the nearest dropped weapon within reach.
+        // 2) A world chest under the crosshair — carry it (if there is a free slot).
+        var chest = FindLookedAtChest();
+        if (chest != null)
+        {
+            // Hands full mid-attack — don't offer to carry (mirrors the slot-switch lock in PlayerInventory.Update).
+            if (_combat != null && _combat.IsAttacking) { hud?.HidePrompt(); return; }
+            if (_inv != null && _inv.HasEmptySlot)
+            {
+                string cname = ChestDatabase.Instance != null ? ChestDatabase.Instance.NameOf(chest.Chest) : chest.Chest.ToString();
+                hud?.ShowPrompt($"Press E to carry {cname}");
+                if (ePressed) CarryChestRpc(chest.NetworkObject);
+            }
+            else
+            {
+                hud?.ShowPrompt("Not enough space");
+            }
+            return;
+        }
+
+        // 3) Otherwise the nearest dropped weapon within reach.
         var drop = FindNearestDrop();
         if (drop != null)
         {
@@ -65,7 +86,42 @@ public class PlayerInteractor : NetworkBehaviour
         return best;
     }
 
-    [Rpc(SendTo.Server)]
+    /// <summary>The available world chest nearest to the crosshair that is within reach (angular look-at,
+    /// like shop items — forgiving of imprecise aim). Null if none.</summary>
+    private WorldChest FindLookedAtChest()
+    {
+        var cam = Camera.main;
+        if (cam == null) return null;
+        Vector3 camPos = cam.transform.position;
+        Vector3 camFwd = cam.transform.forward;
+        float rangeSqr = range * range;
+
+        WorldChest best = null;
+        float bestAngle = aimAngle;
+        foreach (var c in WorldChest.Active)
+        {
+            if (c == null) continue;
+            Vector3 aim = c.AimPoint;
+            if ((aim - transform.position).sqrMagnitude > rangeSqr) continue;   // near the player
+            float angle = Vector3.Angle(camFwd, aim - camPos);                  // near the crosshair
+            if (angle < bestAngle) { bestAngle = angle; best = c; }
+        }
+        return best;
+    }
+
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
+    private void CarryChestRpc(NetworkObjectReference chestRef)
+    {
+        if (_inv == null || !chestRef.TryGet(out var no)) return;
+        if (_combat != null && _combat.IsAttacking) return; // never switch to carrying mid-attack
+        var chest = no.GetComponent<WorldChest>();
+        if (chest == null) return;
+        if ((no.transform.position - transform.position).sqrMagnitude > (range + 1.5f) * (range + 1.5f)) return;
+        if (_inv.AddChestServer(chest.Chest))
+            no.Despawn(true);
+    }
+
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
     private void PickupDropRpc(NetworkObjectReference dropRef)
     {
         if (_inv == null || !dropRef.TryGet(out var no)) return;
@@ -102,7 +158,7 @@ public class PlayerInteractor : NetworkBehaviour
         return best;
     }
 
-    [Rpc(SendTo.Server)]
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
     private void PickupShopRpc(int shopId)
     {
         var shop = ShopManager.Instance;

@@ -109,3 +109,39 @@ Tekrarlanan hatalardan kaçınmak için oturumlardan çıkarılan kurallar.
 - **Genel ders**: bir kullanıcı "genel bozulma, geri al" derse körü körüne revert etme — semptomlar
   (ikon yok + yanlış kategori) tek bir ortak nedene (DB null) işaret ediyordu; asıl refactor (gun aim)
   suçsuzdu. Önce kök nedeni bul.
+
+## Taşınan/tutulan prop (sandık taşıma sistemi)
+- **Tutulan obje karakter KÖKÜNE bağlanırsa sway yapmaz** (havada/sabit görünür). Kullanıcı "sandık
+  benimle sallanmıyor, sabit duruyor" dedi. **Çözüm: her `LateUpdate`'te (animator iskeleti pozladıktan
+  SONRA) objeyi iki el kemiğinin ortasına yerleştir** (`(GetBoneTransform(LeftHand).position +
+  RightHand.position)*0.5`). Kollar/gövde animasyonla sallanınca obje de birebir takip eder → gerçekten
+  taşınıyor gibi. Root-child + sabit local offset YANLIŞ (idle sway'i kaçırır).
+- **Runtime inspector-tunable offset**: per-item taşıma offset'ini (position/euler/scale) Resources'tan
+  yüklenen ScriptableObject'te (ChestDatabase) tut ve `LateUpdate`'te **her frame CANLI oku** (build
+  anında bir kez değil). Böylece kullanıcı oyun çalışırken asset'in inspector'ından offset'i değiştirip
+  anında sonucu görür; SO asset edit'leri play mode'da da PERSIST eder. (Component'e gömmek yerine
+  per-type olduğu için DB doğru yer.)
+- **Fiziksiz drop'u zemine oturt (pivot-bağımsız)**: obje pivot'u tabanda değilse, raycast hit noktasına
+  pivot koymak objeyi havada/gömük bırakır. **Doğru: raycast ile zemin Y'sini bul, objeyi instantiate et,
+  `Physics.SyncTransforms()`, sonra `pos += up * (groundY - collider.bounds.min.y)`** → collider TABANI
+  tam zemine oturur (pivot nerede olursa olsun). Ağırlıklı/rigidbody'siz sandıkta gerekli.
+  - **Diagnostic tuzağı**: bir objeyi yerleştirdikten SONRA onun üstünden aşağı raycast atıp "zemin"i
+    ölçme — ışın objenin KENDİ collider'ına çarpar, sahte groundY verir. Zemini obje spawn olmadan ÖNCE
+    (drop noktasında) ölç.
+- **Taşınan obje boyutu**: kullanıcı taşınırken de dünyadakiyle AYNI boyut istedi → `carryScale=1`
+  (küçültme yok). Elde küçülüp yerde büyümesi kötü hissettiriyordu.
+- **Local cosmetic klon (ağ objesi prefab'ından)**: taşınan görsel, networked chest prefab'ının yerel
+  kopyası. `NetworkObject`/`WorldChest`/`Rigidbody`'yi **`DestroyImmediate` ile parent'lanmadan ÖNCE**
+  kaldır (spawned player altında nested NetworkObject uyarısı olmasın). `WorldChest`'i NetworkObject'ten
+  ÖNCE sil (RequireComponent ile tutuyor). Collider'ları disable et. Bu klon asla Spawn edilmez.
+- **İzole ikon render (URP)**: prefab'ı hotbar ikonuna çekerken sahne geometrisini (yeşil zemin)
+  yakalamamak için: instance'ı uzak bir konuma (9000,9000,9000) taşı + tüm hiyerarşiyi boş bir layer'a
+  (31) al + kamera & ışık `cullingMask = 1<<31`. Render: `RenderPipeline.SubmitRenderRequest(cam,
+  new RenderPipeline.StandardRequest{destination=rt})` (URP'de `Camera.Render()` çalışmaz). Şeffaf zemin:
+  `clearFlags=SolidColor, bg=(0,0,0,0)`, `RenderSettings.fog=false`. ARGB32 RT → ReadPixels → EncodeToPNG
+  → TextureImporter type=Sprite, alphaIsTransparency=true.
+- **In-scene NetworkObject spawn**: sahneye elle konmuş prefab instance'ına NetworkObject eklenince
+  (EnableSceneManagement=true iken) host StartHost'ta otomatik spawn eder (WorldChest.Active 3 oldu).
+  Runtime drop-spawn için prefab AKTİF `NetworkPrefabsList`'e kayıtlı olmalı (bu projede iki kopya var;
+  NetworkManager'ın `NetworkConfig.Prefabs.NetworkPrefabsLists[0]` referansı esas =
+  `Assets/Game/ScriptableObjects/NetworkSO/DefaultNetworkPrefabs.asset`).

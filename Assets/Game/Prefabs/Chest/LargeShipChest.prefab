@@ -10,6 +10,8 @@ GameObject:
   m_Component:
   - component: {fileID: 1790715491468924587}
   - component: {fileID: 8406416255464911995}
+  - component: {fileID: 7595635429601961094}
+  - component: {fileID: 2088937109844335825}
   m_Layer: 0
   m_Name: LargeShipChest
   m_TagString: LargeShip
@@ -54,6 +56,46 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1, y: 0.81001425, z: 0.66199684}
   m_Center: {x: 0, y: 0.41999173, z: 0.033775806}
+--- !u!114 &7595635429601961094
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6429727239576390558}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 0
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  <InScenePlaced>k__BackingField: 0
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
+--- !u!114 &2088937109844335825
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6429727239576390558}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 778142d174b2dab42bab84da37896ce1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::WorldChest
+  ShowTopMostFoldoutHeaderGroup: 1
+  chestType: 3
 --- !u!1001 &7859572079264591133
 PrefabInstance:
   m_ObjectHideFlags: 0

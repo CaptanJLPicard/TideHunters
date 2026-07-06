@@ -44,6 +44,10 @@ public class PlayerController : NetworkBehaviour
     [SerializeField] private int interpolationTicks = 2;
     [SerializeField] private float animDampTime = 0.15f;
 
+    [Header("Carrying")]
+    [Tooltip("Walk-speed multiplier applied while carrying a chest (sprint is also disabled).")]
+    [SerializeField] private float carrySpeedMultiplier = 0.8f;
+
     // Cached components / children.
     private CharacterController _cc;
     private Transform _cameraTarget;
@@ -51,6 +55,7 @@ public class PlayerController : NetworkBehaviour
     private Vector3 _skeletonBaseLocal;
     private PlayerAnimator _anim;
     private PlayerCameraRig _cameraRig;
+    private PlayerInventory _inv;
 
     // Owner input actions.
     private InputActionMap _playerMap;
@@ -89,6 +94,9 @@ public class PlayerController : NetworkBehaviour
     /// <summary>Current planar movement speed (m/s), authoritative/predicted.</summary>
     public float PlanarSpeed => _current.Speed;
 
+    /// <summary>True while this player is in the water (swimming / treading), replicated to every client.</summary>
+    public bool IsSwimming => _current.IsSwimming;
+
     /// <summary>Owner camera yaw (deg). Its recent change = how the player is sweeping the view left/right.</summary>
     public float CameraYaw => _cameraRig != null ? _cameraRig.BodyYaw : 0f;
 
@@ -101,6 +109,7 @@ public class PlayerController : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         _cc = GetComponent<CharacterController>();
+        _inv = GetComponent<PlayerInventory>();
         _cameraTarget = transform.Find("CameraTarget");
         _skeletonRoot = transform.Find("Root");
         if (_skeletonRoot != null) _skeletonBaseLocal = _skeletonRoot.localPosition;
@@ -185,7 +194,17 @@ public class PlayerController : NetworkBehaviour
         InputCommand cmd = SampleInput();
         cmd.Tick = NetworkManager.LocalTime.Tick;
 
-        StatePayload next = PlayerMotor.Simulate(_cc, _current, cmd, Time.deltaTime, motor);
+        // Carrying a chest: hands full, so no sprint and a heavier, slower walk. The animator's locomotion
+        // playback is scaled to match (see LateUpdate) so the reduced walk still plants its feet.
+        MotorConfig m = motor;
+        if (_inv != null && _inv.IsCarryingChest)
+        {
+            cmd.Sprint = false;
+            m.walkSpeed *= carrySpeedMultiplier;
+            m.runSpeed = m.walkSpeed;
+        }
+
+        StatePayload next = PlayerMotor.Simulate(_cc, _current, cmd, Time.deltaTime, m);
         next.Tick = cmd.Tick;
         next.LastProcessedInputTick = cmd.Tick;
         if (IsFinite(next.Position)) _current = next; // transform is now at next.Position (set by CharacterController.Move)
@@ -265,6 +284,9 @@ public class PlayerController : NetworkBehaviour
             _cameraRig.SetSpeedFactor(fast ? 1f : 0f);
         }
         _cameraRig?.ApplyToTarget();
+        // Match the animator's locomotion playback to the (reduced) ground speed while carrying, so the
+        // walk clip's feet stay planted instead of skating.
+        if (_anim != null) _anim.LocomotionScale = (_inv != null && _inv.IsCarryingChest) ? carrySpeedMultiplier : 1f;
         _anim?.Apply(_current, Time.deltaTime);
     }
 

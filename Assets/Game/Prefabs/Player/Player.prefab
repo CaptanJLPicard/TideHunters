@@ -204,6 +204,7 @@ GameObject:
   - component: {fileID: 3861596223775687443}
   - component: {fileID: 2996994312932433224}
   - component: {fileID: 7921270033944659257}
+  - component: {fileID: 4911601853964136531}
   m_Layer: 0
   m_Name: Player
   m_TagString: Player
@@ -291,9 +292,9 @@ MonoBehaviour:
   waveSteepness: 0.105
   waveSpeed: 20
   waveAmplitude: 0.431
-  reconcileThreshold: 0.15
   interpolationTicks: 2
   animDampTime: 0.15
+  carrySpeedMultiplier: 0.8
 --- !u!95 &707869856084543133
 Animator:
   serializedVersion: 7
@@ -419,6 +420,21 @@ MonoBehaviour:
   muzzleFxEuler: {x: 0, y: 0, z: 0}
   muzzleFxScale: 0.5
   cameraShake: 1.4
+--- !u!114 &4911601853964136531
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 513321917047699477}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e4bff4c81a27f9d48a78c78e5332837e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerCarry
+  ShowTopMostFoldoutHeaderGroup: 1
+  anchorLocalPos: {x: 0, y: 0.95, z: 0.34}
+  weightSharpness: 10
 --- !u!1 &1010120301404727160
 GameObject:
   m_ObjectHideFlags: 0
