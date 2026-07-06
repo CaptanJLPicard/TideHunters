@@ -39,9 +39,7 @@ public class PlayerController : NetworkBehaviour
     [SerializeField] private float waveSpeed = 20f;
     [SerializeField] private float waveAmplitude = 0.431f;
 
-    [Header("Netcode / Prediction")]
-    [Tooltip("Position error (metres) above which the owning client corrects toward the server.")]
-    [SerializeField] private float reconcileThreshold = 0.2f;
+    [Header("Netcode")]
     [Tooltip("How many ticks behind to render players seen from another machine.")]
     [SerializeField] private int interpolationTicks = 2;
     [SerializeField] private float animDampTime = 0.15f;
@@ -56,9 +54,13 @@ public class PlayerController : NetworkBehaviour
 
     // Owner input actions.
     private InputActionMap _playerMap;
-    private InputAction _move, _look, _sprint, _jump, _freeLook, _emote1, _emote2, _emote3;
+    private InputAction _move, _look, _sprint, _jump, _freeLook;
 
-    // Replicated authoritative state (server writes, everyone reads).
+    // Replicated authoritative state. Movement is client-authoritative: the player's OWNER simulates
+    // locally and its state is exactly what everyone else sees — the server does not re-simulate or
+    // reconcile, so the owner never rubber-bands against a second simulation. A non-host owner can't write
+    // a NetworkVariable directly, so it ships its state via SubmitStateRpc; the server re-stamps it with
+    // the server tick and publishes it here, keeping every viewer on one interpolation clock.
     private readonly NetworkVariable<StatePayload> _netState = new NetworkVariable<StatePayload>(
         default, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
@@ -68,30 +70,33 @@ public class PlayerController : NetworkBehaviour
     private bool _jumpLatched;
     private int _emoteLatched;
     private int _activeEmote;
-    private InputCommand _lastOwnerInput;
-
-    // Client-owner prediction history (predicted position per tick, for reconciliation).
-    private const int BufferSize = 1024;
-    private readonly Vector3[] _predHistory = new Vector3[BufferSize];
-    private readonly int[] _predHistoryTick = new int[BufferSize];
-    private int _lastReconciledTick = -1;
-    private Vector3 _visualCorrection;   // decaying offset that hides reconciliation pops
-
-    // Server input queue for a remote client's player.
-    private readonly Queue<InputCommand> _serverInputs = new Queue<InputCommand>();
-    private InputCommand _lastServerInput;
 
     // Snapshot interpolation buffer for players seen from another machine.
     private struct Snap { public double time; public StatePayload state; }
     private readonly List<Snap> _snaps = new List<Snap>(64);
 
     // Roles.
-    private bool _ownerSim;          // this machine controls this player (host owner or client owner)
-    private bool _clientOwner;       // pure-client owner (predicts + reconciles)
-    private bool _serverRemote;      // host simulating another client's player
-    private bool _clientRemote;      // client viewing another player
+    private bool _ownerSim;   // this machine owns + simulates this player (host owner or client owner)
     private uint _tickRate = 60;
     private float _dt = 1f / 60f;
+
+    /// <summary>Current look pitch (deg), authoritative/predicted — drives the spine aim on every client.</summary>
+    public float AimPitch => _current.Pitch;
+
+    /// <summary>Horizontal aim offset (deg) between where the camera aims and the body faces — spine twist.</summary>
+    public float AimYawOffset => Mathf.DeltaAngle(_current.Yaw, _current.AimYaw);
+
+    /// <summary>Current planar movement speed (m/s), authoritative/predicted.</summary>
+    public float PlanarSpeed => _current.Speed;
+
+    /// <summary>Owner camera yaw (deg). Its recent change = how the player is sweeping the view left/right.</summary>
+    public float CameraYaw => _cameraRig != null ? _cameraRig.BodyYaw : 0f;
+
+    /// <summary>World aim direction (where the crosshair points), from replicated yaw+pitch — valid on every client.</summary>
+    public Vector3 AimDirection => Quaternion.Euler(_current.Pitch, _current.AimYaw, 0f) * Vector3.forward;
+
+    /// <summary>Kick the owner's camera (e.g. on a gun shot). No-op on non-owners.</summary>
+    public void ShakeCamera(float degrees) => _cameraRig?.AddShake(degrees);
 
     public override void OnNetworkSpawn()
     {
@@ -108,10 +113,7 @@ public class PlayerController : NetworkBehaviour
         _dt = 1f / _tickRate;
 
         _ownerSim = IsOwner;
-        _clientOwner = IsOwner && !IsServer;
-        _serverRemote = IsServer && !IsOwner;
-        _clientRemote = IsClient && !IsServer && !IsOwner;
-        _cc.enabled = IsServer || IsOwner;
+        _cc.enabled = IsOwner; // only the owner simulates + collides; everyone else interpolates its state
 
         _current = new StatePayload
         {
@@ -123,7 +125,7 @@ public class PlayerController : NetworkBehaviour
         };
         if (IsServer) _netState.Value = _current;
 
-        _netState.OnValueChanged += OnServerStateChanged;
+        _netState.OnValueChanged += OnNetStateChanged;
 
         if (IsOwner) SetupOwner();
 
@@ -134,7 +136,7 @@ public class PlayerController : NetworkBehaviour
     {
         if (NetworkManager != null && NetworkManager.NetworkTickSystem != null)
             NetworkManager.NetworkTickSystem.Tick -= OnTick;
-        _netState.OnValueChanged -= OnServerStateChanged;
+        _netState.OnValueChanged -= OnNetStateChanged;
 
         if (IsOwner)
         {
@@ -155,9 +157,6 @@ public class PlayerController : NetworkBehaviour
             _sprint = _playerMap.FindAction("Sprint", true);
             _jump = _playerMap.FindAction("Jump", true);
             _freeLook = _playerMap.FindAction("FreeLook", true);
-            _emote1 = _playerMap.FindAction("Emote1", true);
-            _emote2 = _playerMap.FindAction("Emote2", true);
-            _emote3 = _playerMap.FindAction("Emote3", true);
         }
         else
         {
@@ -180,34 +179,28 @@ public class PlayerController : NetworkBehaviour
         if (!_ownerSim) return;
 
         if (_jump != null && _jump.WasPressedThisFrame()) _jumpLatched = true;
-        int e = ReadEmote();
-        if (e != 0) _emoteLatched = e;
-        _cameraRig?.UpdateAngles(Time.deltaTime);
+        if (!EmoteWheel.IsOpen) _cameraRig?.UpdateAngles(Time.deltaTime); // freeze look while aiming the emote wheel
 
         // Simulate this frame with real delta time -> frame-aligned, perfectly smooth motion.
         InputCommand cmd = SampleInput();
         cmd.Tick = NetworkManager.LocalTime.Tick;
-        _lastOwnerInput = cmd;
 
         StatePayload next = PlayerMotor.Simulate(_cc, _current, cmd, Time.deltaTime, motor);
         next.Tick = cmd.Tick;
         next.LastProcessedInputTick = cmd.Tick;
-        _current = next; // transform is now at next.Position (set by CharacterController.Move)
+        if (IsFinite(next.Position)) _current = next; // transform is now at next.Position (set by CharacterController.Move)
+        else Teleport(_current.Position);             // sim produced a non-finite pose — hold the last good one
     }
 
-    private int ReadEmote()
-    {
-        if (_emote1 != null && _emote1.WasPressedThisFrame()) return 1;
-        if (_emote2 != null && _emote2.WasPressedThisFrame()) return 2;
-        if (_emote3 != null && _emote3.WasPressedThisFrame()) return 3;
-        return 0;
-    }
+    /// <summary>Play an emote (1..3) — called by the emote wheel. Owner only; movement/jump cancels it.</summary>
+    public void TriggerEmote(int id) { if (_ownerSim && id >= 1 && id <= 3) _emoteLatched = id; }
 
     private InputCommand SampleInput()
     {
         Vector2 mv = _move != null ? _move.ReadValue<Vector2>() : Vector2.zero;
         bool sprint = _sprint != null && _sprint.IsPressed();
         float yaw = _cameraRig != null ? _cameraRig.BodyYaw : transform.eulerAngles.y;
+        float pitch = _cameraRig != null ? _cameraRig.Pitch : 0f;
 
         if (_emoteLatched != 0) _activeEmote = _emoteLatched;
         if (mv.sqrMagnitude > 0.02f || _jumpLatched) _activeEmote = 0;
@@ -217,6 +210,7 @@ public class PlayerController : NetworkBehaviour
             MoveX = mv.x,
             MoveY = mv.y,
             Yaw = yaw,
+            Pitch = pitch,
             Sprint = sprint,
             Jump = _jumpLatched,
             Emote = _activeEmote,
@@ -230,97 +224,38 @@ public class PlayerController : NetworkBehaviour
 
     private void OnTick()
     {
-        int tick = NetworkManager.LocalTime.Tick;
+        if (!_ownerSim) return; // only the owner advances + publishes this player's authoritative state
 
-        if (IsServer && IsOwner)
-        {
-            // Host's own player: already simulated per-frame and authoritative — just replicate.
-            _current.Tick = tick;
-            _netState.Value = _current;
-        }
-        else if (_serverRemote)
-        {
-            ServerTickRemote(tick);
-        }
-        else if (_clientOwner)
-        {
-            // Record where prediction says we are this tick, then send input to the server.
-            _predHistory[tick % BufferSize] = _current.Position;
-            _predHistoryTick[tick % BufferSize] = tick;
-            SubmitInputRpc(_lastOwnerInput);
-        }
+        _current.Tick = NetworkManager.LocalTime.Tick;
+        if (IsServer) _netState.Value = _current; // host owner writes the NetworkVariable directly
+        else SubmitStateRpc(_current);            // client owner ships it to the server to publish
     }
 
-    private void ServerTickRemote(int tick)
-    {
-        if (_serverInputs.Count > 0) _lastServerInput = _serverInputs.Dequeue();
-        InputCommand cmd = _lastServerInput;
-
-        if ((transform.position - _current.Position).sqrMagnitude > 1e-4f) Teleport(_current.Position);
-        StatePayload next = PlayerMotor.Simulate(_cc, _current, cmd, _dt, motor);
-        next.Tick = tick;
-        next.LastProcessedInputTick = cmd.Tick;
-        _current = next;
-
-        _snaps.Add(new Snap { time = tick * (double)_dt, state = next });
-        while (_snaps.Count > 32) _snaps.RemoveAt(0);
-
-        _netState.Value = next;
-    }
-
+    // Client owner → server: hand the server this player's authoritative state so it can publish it to
+    // everyone (a non-host owner may not write the NetworkVariable itself).
     [Rpc(SendTo.Server)]
-    private void SubmitInputRpc(InputCommand cmd, RpcParams rpc = default)
+    private void SubmitStateRpc(StatePayload state)
     {
-        _serverInputs.Enqueue(cmd);
-        while (_serverInputs.Count > 12) _serverInputs.Dequeue();
+        state.Tick = NetworkManager.LocalTime.Tick; // re-stamp onto the server clock so all viewers share it
+        _netState.Value = state;
     }
 
-    // ---- Reconciliation (client owner) -----------------------------------------------------
-
-    private void OnServerStateChanged(StatePayload previous, StatePayload next)
+    private void OnNetStateChanged(StatePayload previous, StatePayload next)
     {
-        if (_clientRemote)
-        {
-            _snaps.Add(new Snap { time = next.Tick * (double)_dt, state = next });
-            while (_snaps.Count > 64) _snaps.RemoveAt(0);
-        }
-        else if (_clientOwner)
-        {
-            ReconcileClient(next);
-        }
-        // host owner: authoritative locally → ignore
-    }
+        if (_ownerSim) return; // our own local simulation is authoritative — never fight it
 
-    private void ReconcileClient(StatePayload server)
-    {
-        int t = server.LastProcessedInputTick;
-        if (t <= _lastReconciledTick || _predHistoryTick[t % BufferSize] != t) return;
-        _lastReconciledTick = t;
-
-        // Compare the server's authoritative position at tick t with what we predicted then.
-        Vector3 error = server.Position - _predHistory[t % BufferSize];
-        if (error.sqrMagnitude < reconcileThreshold * reconcileThreshold) return;
-
-        // Shift our current prediction by the error (keeps us near the server without rubber-banding),
-        // and add the visible jump to a decaying offset so the correction isn't a hard pop.
-        _visualCorrection += error;
-        _current.Position += error;
-        Teleport(_current.Position);
+        _snaps.Add(new Snap { time = next.Tick * (double)_dt, state = next });
+        while (_snaps.Count > 64) _snaps.RemoveAt(0);
     }
 
     // ---- Rendering -------------------------------------------------------------------------
 
     private void LateUpdate()
     {
-        if (_clientRemote)
-        {
-            InterpolateRemote();
-        }
-        else if (_serverRemote)
-        {
-            InterpolateLocalSnaps();
-        }
-        // owner: transform already holds the per-frame sim result — nothing to do.
+        // Anyone who doesn't own this player renders it from interpolated snapshots of its authoritative
+        // state. The owner already holds the live per-frame sim result on its transform — nothing to do.
+        if (!_ownerSim)
+            Interpolate(NetworkManager.ServerTime.Time - interpolationTicks * _dt);
 
         ApplyVisual();
         if (_cameraRig != null)
@@ -330,10 +265,10 @@ public class PlayerController : NetworkBehaviour
             _cameraRig.SetSpeedFactor(fast ? 1f : 0f);
         }
         _cameraRig?.ApplyToTarget();
-        _anim.Apply(_current, Time.deltaTime);
+        _anim?.Apply(_current, Time.deltaTime);
     }
 
-    // Skeleton-only visual offset: ocean wave bob while swimming + decaying reconciliation smoothing.
+    // Skeleton-only visual offset: ocean wave bob while swimming.
     private void ApplyVisual()
     {
         if (_skeletonRoot == null) return;
@@ -343,24 +278,7 @@ public class PlayerController : NetworkBehaviour
             float timeX = Time.timeSinceLevelLoad / 20f;
             bob = OceanWaves.SurfaceOffsetY(transform.position, timeX, waveCount, waveLength, waveSteepness, waveSpeed, waveAmplitude);
         }
-        // ease the reconciliation offset back to zero
-        if (_visualCorrection.sqrMagnitude > 1e-6f)
-            _visualCorrection = Vector3.Lerp(_visualCorrection, Vector3.zero, 1f - Mathf.Exp(-12f * Time.deltaTime));
-        else
-            _visualCorrection = Vector3.zero;
-
-        _skeletonRoot.localPosition = _skeletonBaseLocal + Vector3.up * bob
-            + transform.InverseTransformVector(-_visualCorrection);
-    }
-
-    private void InterpolateRemote()
-    {
-        Interpolate(NetworkManager.ServerTime.Time - interpolationTicks * _dt);
-    }
-
-    private void InterpolateLocalSnaps()
-    {
-        Interpolate(NetworkManager.ServerTime.Time - interpolationTicks * _dt);
+        _skeletonRoot.localPosition = _skeletonBaseLocal + Vector3.up * bob;
     }
 
     private void Interpolate(double renderTime)
@@ -384,6 +302,7 @@ public class PlayerController : NetworkBehaviour
     private void ApplySnap(in StatePayload a, in StatePayload b, float f)
     {
         Vector3 pos = Vector3.Lerp(a.Position, b.Position, f);
+        if (!IsFinite(pos)) return; // ignore a corrupt snapshot rather than snap the transform to NaN
         float yaw = Mathf.LerpAngle(a.Yaw, b.Yaw, f);
         transform.SetPositionAndRotation(pos, Quaternion.Euler(0f, yaw, 0f));
         _current = b;
@@ -398,4 +317,7 @@ public class PlayerController : NetworkBehaviour
         transform.position = pos;
         _cc.enabled = was;
     }
+
+    private static bool IsFinite(Vector3 v) =>
+        float.IsFinite(v.x) && float.IsFinite(v.y) && float.IsFinite(v.z);
 }

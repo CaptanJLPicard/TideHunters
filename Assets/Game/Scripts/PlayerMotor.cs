@@ -46,17 +46,17 @@ public struct MotorConfig
 /// Pure, deterministic movement step. Given the same start state + input + dt it produces the same
 /// output on client and server.
 ///
-/// Movement is "rotate-to-move" (third-person adventure style): the character eases its heading
-/// toward its camera-relative movement direction and moves forwards, so pressing back turns it toward
-/// the camera. While the heading is still catching up to a genuine turn it reports a lateral / backward
-/// blend (a readable strafe / backpedal lean); a small dead-zone keeps straight running from leaning.
+/// Movement is "rotate-to-move" (third-person adventure style): the character eases its heading toward
+/// its camera-relative movement direction and always moves forwards along that heading, so pressing
+/// back turns it toward the camera (turn rate is boosted with the size of the heading change, so hard
+/// reversals pivot instead of arcing). Moving along the facing keeps the translation matched to the
+/// forward locomotion clip, so the feet never skate while the heading is still catching up.
 /// </summary>
 public static class PlayerMotor
 {
-    // Lean shaping: dead-zone (deg) below which no lean is reported, then a gentle gain. Kept modest so
-    // the lean reads on real turns without twitching on small course corrections.
-    private const float LeanDeadzoneDeg = 6f;
-    private const float LeanGain = 1.4f;
+    // Extra heading-turn multiplier at a full reversal (0 aligned → 1 reversed), so about-faces pivot
+    // quickly instead of arcing wide.
+    private const float TurnReverseBoost = 2.5f;
 
     public static StatePayload Simulate(CharacterController cc, in StatePayload prev, in InputCommand input, float dt, in MotorConfig cfg)
     {
@@ -71,12 +71,15 @@ public static class PlayerMotor
         bool moving = moveMag > 0.1f;
         Vector3 worldDir = Quaternion.Euler(0f, input.Yaw, 0f) * local;
 
-        // Eased turn toward the movement heading (fast to start, smooth to settle → no lag, no jitter).
+        // Eased turn toward the movement heading. Turn faster the larger the heading change so a hard
+        // reversal snaps around quickly instead of arcing wide (which would read as skating).
         float yaw = prev.Yaw;
         if (moving)
         {
             float targetYaw = Mathf.Atan2(worldDir.x, worldDir.z) * Mathf.Rad2Deg;
             float sharp = swimming ? cfg.swimTurnSharpness : cfg.turnSharpness;
+            float misalign = 0.5f * (1f - Mathf.Cos(Mathf.DeltaAngle(prev.Yaw, targetYaw) * Mathf.Deg2Rad)); // 0 aligned..1 reversed
+            sharp *= Mathf.Lerp(1f, TurnReverseBoost, misalign);
             yaw = Mathf.LerpAngle(prev.Yaw, targetYaw, 1f - Mathf.Exp(-sharp * dt));
         }
         t.rotation = Quaternion.Euler(0f, yaw, 0f);
@@ -84,8 +87,9 @@ public static class PlayerMotor
         float planarSpeed = swimming
             ? (input.Sprint ? cfg.swimSprintSpeed : cfg.swimSpeed)
             : (input.Sprint ? cfg.runSpeed : cfg.walkSpeed);
-        Vector3 moveDir = moving ? worldDir.normalized : Vector3.zero;
-        Vector3 horizontal = moveDir * planarSpeed;
+        // Move along the CURRENT facing, not the raw input direction: the translation then always matches
+        // the forward locomotion clip, so the feet never skate when the heading is still catching up.
+        Vector3 horizontal = moving ? (t.rotation * Vector3.forward) * planarSpeed : Vector3.zero;
 
         float vertVel = prev.VerticalVelocity;
         int jumpStamp = prev.JumpStamp;
@@ -121,18 +125,8 @@ public static class PlayerMotor
             ? (moveMag > 0.05f ? 1f : 0f)
             : moveMag * (input.Sprint ? 1f : 0.5f);
 
-        // Lean = movement direction expressed in the character's (still-turning) facing, with a small
-        // dead-zone so only real turns lean. Eases to pure forward as the heading aligns.
+        // The body always moves forwards along its facing now, so the locomotion blend is pure forward.
         float animMoveX = 0f, animMoveY = moving ? moveMag : 0f;
-        if (moving)
-        {
-            Vector3 localDir = Quaternion.Euler(0f, -yaw, 0f) * moveDir;
-            float angDeg = Mathf.Atan2(localDir.x, localDir.z) * Mathf.Rad2Deg;
-            float gated = Mathf.Sign(angDeg) * Mathf.Max(0f, Mathf.Abs(angDeg) - LeanDeadzoneDeg);
-            float leanRad = Mathf.Clamp(gated * LeanGain, -175f, 175f) * Mathf.Deg2Rad;
-            animMoveX = Mathf.Sin(leanRad) * moveMag;
-            animMoveY = Mathf.Cos(leanRad) * moveMag;
-        }
 
         return new StatePayload
         {
@@ -140,6 +134,8 @@ public static class PlayerMotor
             LastProcessedInputTick = input.Tick,
             Position = t.position,
             Yaw = yaw,
+            AimYaw = input.Yaw,
+            Pitch = input.Pitch,
             VerticalVelocity = vertVel,
             Grounded = grounded,
             IsSwimming = swimming,

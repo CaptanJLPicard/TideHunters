@@ -27,6 +27,8 @@ public class PlayerCameraRig
     private float _pitch;      // camera pitch (degrees)
     private float _freeYaw;    // free-look yaw offset
     private float _freePitch;  // free-look pitch offset
+    private float _shake;      // current camera-shake magnitude (deg), decays each frame
+    private const float ShakeDecay = 11f;
 
     private CinemachineCamera _vcam;
 
@@ -39,6 +41,9 @@ public class PlayerCameraRig
 
     /// <summary>Desired character facing (degrees). Frozen while free-look is held.</summary>
     public float BodyYaw => _yaw;
+
+    /// <summary>Look pitch (degrees) used to bend the spine toward the aim direction.</summary>
+    public float Pitch => _pitch;
 
     public PlayerCameraRig(Transform target, InputAction look, InputAction freeLook, float startYaw,
         float sensitivity = 0.15f, float pitchMin = -35f, float pitchMax = 70f, float freeReturnSharpness = 12f)
@@ -102,11 +107,22 @@ public class PlayerCameraRig
         _fovBoostTarget = Mathf.Clamp01(t);
     }
 
+    /// <summary>Kick the camera by up to <paramref name="degrees"/> of jitter (e.g. on a gun shot); decays quickly.</summary>
+    public void AddShake(float degrees) => _shake = Mathf.Max(_shake, degrees);
+
     /// <summary>Call in LateUpdate after the body has been posed. Writes the pivot world rotation.</summary>
     public void ApplyToTarget()
     {
         if (_target != null)
-            _target.rotation = Quaternion.Euler(_pitch + _freePitch, _yaw + _freeYaw, 0f);
+        {
+            Quaternion rot = Quaternion.Euler(_pitch + _freePitch, _yaw + _freeYaw, 0f);
+            if (_shake > 0.01f)
+            {
+                rot *= Quaternion.Euler(Random.Range(-_shake, _shake), Random.Range(-_shake, _shake), 0f);
+                _shake = Mathf.Lerp(_shake, 0f, 1f - Mathf.Exp(-ShakeDecay * Time.deltaTime));
+            }
+            _target.rotation = rot;
+        }
 
         if (_vcam != null && _baseFov > 0f)
         {

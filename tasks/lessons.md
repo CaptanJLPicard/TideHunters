@@ -91,3 +91,21 @@ Tekrarlanan hatalardan kaçınmak için oturumlardan çıkarılan kurallar.
 - RPC: `[Rpc(SendTo.Server)]` / `[Rpc(SendTo.Owner)]` (klasikler `[ServerRpc]` obsolete).
 - Client-side prediction için `NetworkTransform`'u kaldırıp özel replikasyon (NetworkVariable +
   reconciliation) kur; NetworkTransform prediction ile çakışır.
+
+## ScriptableObject asset kırılganlığı (WeaponDatabase tekrar bozulması)
+- **Semptom**: Alınan itemlar hotbar slotlarında görünmez (ikon yok) + gun alsan bile sol tık sword
+  slash oynatır. Kök neden: `WeaponDatabase.Instance` (Resources.Load) **null** →
+  `FindAssets("t:WeaponDatabase")=0`, asset diskte olsa da tip çözülmüyor (m_Script referansı bozuk).
+  Null olunca `IconOf`→null (ikon yok) ve eski `SelectedCategory` fallback'i `Sword`'du (gun→slash).
+- **Kök neden**: `WeaponDatabase` (ScriptableObject) `WeaponTypes.cs` içindeydi. **Unity bir
+  ScriptableObject/MonoBehaviour'ın script referansını DOSYA ADINA bağlar** — sınıf-adı≠dosya-adı olunca
+  m_Script linki kırılgan olur ve reimport/domain-reload'da tipini kaybeder (bu yüzden tekrar tekrar
+  bozuluyordu). **Kalıcı çözüm**: `WeaponDatabase`'i kendi `WeaponDatabase.cs` dosyasına taşı (enum'lar +
+  `WeaponDef` `WeaponTypes.cs`'te kalabilir — onlar SO/MB değil). Doğrulama: ForceUpdate reimport sonrası
+  `LoadAssetAtPath=True, FindAssets=1` (eskiden bozuluyordu). Geri birleştirme.
+- **Savunma**: kategori gibi kritik davranışı DB'den değil id enum'undan türet
+  (`WeaponDatabase.CategoryFor(id)`: WoodenSword/GoldenSword=Sword, yoksa Gun) → DB bozulsa bile
+  gun asla sword gibi davranmaz. İkon DB gerektirir, o yüzden asset yine de sağlam olmalı.
+- **Genel ders**: bir kullanıcı "genel bozulma, geri al" derse körü körüne revert etme — semptomlar
+  (ikon yok + yanlış kategori) tek bir ortak nedene (DB null) işaret ediyordu; asıl refactor (gun aim)
+  suçsuzdu. Önce kök nedeni bul.

@@ -1,0 +1,47 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5a6b772ec2cdac44c9776200fd85a927, type: 3}
+  m_Name: WeaponDatabase
+  m_EditorClassIdentifier: Assembly-CSharp::WeaponDatabase
+  weapons:
+  - id: 1
+    displayName: Heavy Gun
+    category: 0
+    prefab: {fileID: 5210574926600483156, guid: 547df7d7d9b23d444bf95fff13fe7fa1, type: 3}
+    icon: {fileID: 21300000, guid: 8c196ddbde7d47942abcf6947f1244f0, type: 3}
+    holdPosition: {x: 0, y: 0, z: 0}
+    holdEuler: {x: 0, y: 0, z: 0}
+    holdScale: 1
+  - id: 2
+    displayName: Light Gun
+    category: 0
+    prefab: {fileID: 4561822946912447944, guid: a50c8a4eca6efde44995ef9fedacaa5f, type: 3}
+    icon: {fileID: 21300000, guid: 609ac498c675f4f40913484d3299a620, type: 3}
+    holdPosition: {x: 0, y: 0, z: 0}
+    holdEuler: {x: 0, y: 0, z: 0}
+    holdScale: 1
+  - id: 3
+    displayName: Wooden Sword
+    category: 1
+    prefab: {fileID: 8920457990954465873, guid: 598f1938d1f2ff142ad18cee2d263c50, type: 3}
+    icon: {fileID: 21300000, guid: 6ea68b683cc22914788039f406d93a28, type: 3}
+    holdPosition: {x: 0, y: 0, z: 0}
+    holdEuler: {x: 0, y: 0, z: 0}
+    holdScale: 1
+  - id: 4
+    displayName: Golden Sword
+    category: 1
+    prefab: {fileID: 1286054325925426139, guid: 5f5439b76c83d3e42964c0ed6cb0a811, type: 3}
+    icon: {fileID: 21300000, guid: bf08490e54666e3408857e150ea45806, type: 3}
+    holdPosition: {x: 0, y: 0, z: 0}
+    holdEuler: {x: 0, y: 0, z: 0}
+    holdScale: 1
