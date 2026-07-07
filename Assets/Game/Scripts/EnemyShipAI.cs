@@ -78,6 +78,17 @@ public class EnemyShipAI : NetworkBehaviour, IShipPilot
     [Tooltip("The ship's reward chest (SmallShipChest). Becomes null when a player carries it off.")]
     [SerializeField] private Transform chest;
 
+    [Header("Chest recovery (multiplayer)")]
+    [Tooltip("When a player steals our chest and 2+ players are around, this many crew hunt the players NOT carrying " +
+             "the chest; the rest chase the carrier (and board whatever ship the carrier climbs onto).")]
+    [SerializeField] private int chestHunters = 2;
+
+    private bool _chestStolen;
+    private readonly List<Health> _nonCarriers = new List<Health>();
+
+    /// <summary>Server: a player has run off with our chest while others are around — the crew should split to hunt.</summary>
+    public bool ChestStolen => _chestStolen;
+
     [Header("Death / despawn")]
     [Tooltip("Seconds after the hull is destroyed before the wreck + its drowned crew despawn (covers the sink).")]
     [SerializeField] private float despawnAfterDeath = 24f;
@@ -390,6 +401,66 @@ public class EnemyShipAI : NetworkBehaviour, IShipPilot
         else { _mode = ShipMode.Peaceful; }                                                     // escaped/quiet → crew recalls
 
         UpdateBoardOrder();
+        UpdateChestRecovery();
+    }
+
+    // Our chest is gone + a player is carrying it while others are around → flag the split-hunt dynamic and pick the
+    // global carrier (not just an on-deck boarder) so the crew can chase them off the ship.
+    private void UpdateChestRecovery()
+    {
+        _chestStolen = false;
+        _nonCarriers.Clear();
+        if (ChestAboard) return; // we still have our chest → nothing to recover
+
+        Health carrier = null;
+        var all = Health.All;
+        for (int i = 0; i < all.Count; i++)
+        {
+            var h = all[i];
+            if (h == null || h.Side != Team.Player || !h.IsAlive) continue;
+            var inv = h.GetComponent<PlayerInventory>();
+            if (inv != null && inv.IsCarryingChest) { if (carrier == null) carrier = h; }
+            else _nonCarriers.Add(h);
+        }
+        int players = _nonCarriers.Count + (carrier != null ? 1 : 0);
+        if (carrier != null && players >= 2)
+        {
+            _chestStolen = true;
+            _chestCarrier = carrier; // override: the whole crew now prioritises the runner + the split
+        }
+    }
+
+    // True if this crew member is one of the (chestHunters) sent after the NON-carriers; the rest chase the carrier.
+    // Stable ranking by instance id so the same NPCs keep their role.
+    private bool IsChestHunter(EnemyNpcController npc)
+    {
+        int rank = 0;
+        var crew = EnemyNpcController.All;
+        for (int i = 0; i < crew.Count; i++)
+        {
+            var n = crew[i];
+            if (n == null || n.CommanderShip != this || !n.IsAlive || n == npc) continue;
+            if (n.GetInstanceID() < npc.GetInstanceID()) rank++;
+        }
+        return rank < chestHunters;
+    }
+
+    /// <summary>Server: the player this crew member should pursue during a chest recovery — a hunter takes the nearest
+    /// non-carrier, everyone else takes the carrier. Null if not in a recovery.</summary>
+    public Health ChestRoleTarget(EnemyNpcController npc)
+    {
+        if (!_chestStolen) return null;
+        if (IsChestHunter(npc) && _nonCarriers.Count > 0)
+        {
+            Health best = null; float bestSqr = float.MaxValue;
+            for (int i = 0; i < _nonCarriers.Count; i++)
+            {
+                float d = (_nonCarriers[i].transform.position - npc.transform.position).sqrMagnitude;
+                if (d < bestSqr) { bestSqr = d; best = _nonCarriers[i]; }
+            }
+            return best != null ? best : _chestCarrier;
+        }
+        return _chestCarrier;
     }
 
     // Count cannon hits on the target player ship and, once past the threshold while it's close + nearly stopped,

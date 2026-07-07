@@ -236,6 +236,14 @@ public class EnemyNpcController : NetworkBehaviour, IAimSource
         _freeSwim = false; // default: constrained to the deck (edge sensors on). Water phases turn this on.
         ShipMode mode = ship != null ? MapMode(ship.Mode) : ShipMode.Idle;
 
+        // Chest recovery (multiplayer): a player ran off with our chest → 2 crew hunt the non-carriers, the rest
+        // chase the carrier and board whatever ship they climb onto. Overrides normal duties + the come-home pull.
+        if (ship != null && ship.ChestStolen)
+        {
+            Health hunt = ship.ChestRoleTarget(this);
+            if (hunt != null) { ChestHunt(hunt, dt); return; }
+        }
+
         // Cannon-hit boarding order: the 4 non-cannon crew leap across to the player ship; the gunner keeps firing.
         if (ship != null && ship.BoardOrder && !isCannonCrew && ship.PlayerShip != null) mode = ShipMode.Invade;
 
@@ -403,6 +411,57 @@ public class EnemyNpcController : NetworkBehaviour, IAimSource
         if (ship == null) return false;
         Vector3 hull = ship.ClosestHullPoint(transform.position);
         return Vector3.Distance(Flat(transform.position), Flat(hull)) < radius;
+    }
+
+    // Chest recovery: pursue a specific player. If they're standing on a ship, swim over + board it and fight; on
+    // foot / in the water, swim to them and shoot. (Hunters get a non-carrier; chasers get the chest carrier.)
+    private void ChestHunt(Health target, float dt)
+    {
+        _pinned = false;
+        _posture.Value = PostureNone;
+
+        // Already aboard a player ship → fight whoever is there.
+        if (_boardedShip != null)
+        {
+            Health t = PickTarget();
+            if (t != null) { _aiming.Value = true; FightBoarders(dt); return; }
+            _aiming.Value = false;
+            MoveToward(target.transform.position, false, 0f, false, dt);
+            return;
+        }
+
+        _freeSwim = true;
+        ShipController targetShip = PlayerShipOf(target);
+        if (targetShip != null && targetShip != _homeShip)
+        {
+            Vector3 board = targetShip.DeckBoardPoint;
+            MoveToward(board, true, 0f, false, dt);
+            if (NearHull(targetShip, boardReachRadius) || Vector3.Distance(Flat(transform.position), Flat(board)) < 2.5f)
+                BoardPlayerShip(targetShip);
+            return;
+        }
+
+        // Target on foot / in the water: close in, then shoot when within gun range.
+        Vector3 tp = target.transform.position;
+        float d = Flat(transform.position - tp).magnitude;
+        bool inRange = d <= gunRange;
+        _aiming.Value = inRange;
+        if (d > keepDistance) MoveToward(tp, true, 0f, inRange, dt, inRange ? (Vector3?)tp : null);
+        else StandStill(dt);
+        if (inRange) TryFire(target, dt);
+    }
+
+    // The ship a player is standing on (a short downward ray), or null if they're on foot / in the water.
+    private ShipController PlayerShipOf(Health player)
+    {
+        if (player == null) return null;
+        var hits = Physics.RaycastAll(player.transform.position + Vector3.up * 1f, Vector3.down, 3.5f, ~0, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < hits.Length; i++)
+        {
+            var s = hits[i].collider.GetComponentInParent<ShipController>();
+            if (s != null) return s;
+        }
+        return null;
     }
 
     // ================= movement primitive =================
