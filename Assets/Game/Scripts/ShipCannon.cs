@@ -29,17 +29,79 @@ public class ShipCannon : NetworkBehaviour
     [SerializeField] private float maxRange = 45f;          // can't hit beyond this
     [SerializeField] private float minRange = 8f;           // too close to depress the barrel
     [SerializeField] private float reloadTime = 3.5f;
-    [SerializeField] private int damage = 20;
+    [Tooltip("Damage per hit to the enemy hull.")]
+    [SerializeField] private int damage = 10;
     [Tooltip("Bow must be within this many degrees of the target (horizontal) before the cannon fires.")]
     [SerializeField] private float aimTolerance = 12f;
+    [Tooltip("Which side this cannon belongs to (Enemy = AI ship, Player = player-crewed ship).")]
+    [SerializeField] private Team team = Team.Enemy;
+
+    [Header("Manual pitch (player-crewed cannon only)")]
+    [Tooltip("The cannon mesh to tilt as the gunner aims (SmallShipCannon1). Null = fixed cannon (enemy auto-aim).")]
+    [SerializeField] private Transform pitchPivot;
+    [Tooltip("Max elevation X-euler (barrel raised → parabola).")]
+    [SerializeField] private float pitchMin = -16f;
+    [Tooltip("Level X-euler (flat shot).")]
+    [SerializeField] private float pitchMax = 4f;
+    [SerializeField] private float pitchLerp = 12f;
+    [Tooltip("Barrel muzzle in the cannon mesh's local space (the shot leaves here, tilting with the barrel).")]
+    [SerializeField] private Vector3 barrelTipLocal = new Vector3(0f, 0.51f, 1.65f);
 
     public float MaxRange => maxRange;
     public float MinRange => minRange;
-    public Vector3 MuzzlePos => muzzle != null ? muzzle.position : transform.position;
-    public Vector3 MuzzleForward => muzzle != null ? muzzle.forward : transform.forward;
+    // For a player-crewed cannon the shot leaves the real barrel TIP + travels along the barrel (both taken from
+    // the tilting cannon mesh, so re-parenting a muzzle isn't needed). Enemy cannons keep their fixed muzzle child.
+    public Vector3 MuzzlePos => pitchPivot != null ? pitchPivot.TransformPoint(barrelTipLocal)
+                                                   : (muzzle != null ? muzzle.position : transform.position);
+    public Vector3 MuzzleForward => pitchPivot != null ? pitchPivot.forward
+                                                       : (muzzle != null ? muzzle.forward : transform.forward);
 
     private float _nextFireTime;
     public bool ReadyToFire => Time.time >= _nextFireTime;
+    public float ReloadTime => reloadTime;
+
+    // Replicated barrel pitch (X-euler) for the player-crewed cannon. Owner (the ship's driver) writes it; every
+    // peer tilts the barrel + the muzzle child to match, so the shot direction is consistent everywhere.
+    private readonly NetworkVariable<float> _pitch = new(4f,
+        NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+    private float _pitchBaseY, _pitchBaseZ;
+    private bool _pitchBaseCaptured;
+
+    public float PitchMin => pitchMin;
+    public float PitchMax => pitchMax;
+    public float Pitch => _pitch.Value;
+
+    /// <summary>Owner (driver) only: set the barrel elevation, clamped to [pitchMin, pitchMax].</summary>
+    public void SetPitchOwner(float p) { if (IsOwner) _pitch.Value = Mathf.Clamp(p, pitchMin, pitchMax); }
+
+    // Bow yaw direction (flat), taken from the muzzle so it follows the hull heading.
+    private Vector3 ForwardFlat()
+    {
+        Vector3 f = new Vector3(MuzzleForward.x, 0f, MuzzleForward.z);
+        return f.sqrMagnitude < 1e-4f ? transform.forward : f.normalized;
+    }
+
+    /// <summary>The launch direction from the current pitch: flat at pitchMax (level shot), tilting up toward
+    /// pitchMin (parabola). Derived from the pitch VALUE (not the mesh transform) so it's rig-independent.</summary>
+    public Vector3 AimDir()
+    {
+        float e = (pitchMax - _pitch.Value) * Mathf.Deg2Rad; // 0° at level, up to (pitchMax-pitchMin)° at max elevation
+        Vector3 f = ForwardFlat();
+        return (f * Mathf.Cos(e) + Vector3.up * Mathf.Sin(e)).normalized;
+    }
+
+    private void Update()
+    {
+        if (pitchPivot == null) return; // fixed cannon (enemy)
+        if (!_pitchBaseCaptured)
+        {
+            var e0 = pitchPivot.localEulerAngles;
+            _pitchBaseY = e0.y; _pitchBaseZ = e0.z; _pitchBaseCaptured = true;
+        }
+        float curX = pitchPivot.localEulerAngles.x;
+        float nx = Mathf.LerpAngle(curX, _pitch.Value, 1f - Mathf.Exp(-pitchLerp * Time.deltaTime));
+        pitchPivot.localEulerAngles = new Vector3(nx, _pitchBaseY, _pitchBaseZ);
+    }
 
     /// <summary>Server: fire at a world point if in range, roughly aligned and reloaded. Returns true if fired.</summary>
     public bool ServerTryFireAt(Vector3 targetPoint, ulong attacker)
@@ -61,6 +123,22 @@ public class ShipCannon : NetworkBehaviour
         return true;
     }
 
+    /// <summary>Server: player-crewed fire — launch a ball straight along the (tilted) barrel. The muzzle is a
+    /// child of the pitched cannon, so its forward already carries the aim; gravity turns a raised barrel into a
+    /// parabola and a level one into a near-flat shot. Respects the reload. Returns true if it fired.</summary>
+    public bool ServerFireForward(ulong attacker)
+    {
+        if (!IsServer || muzzle == null || cannonBallPrefab == null) return false;
+        if (Time.time < _nextFireTime) return false;
+        // Fire straight along the real barrel (the muzzle is at the barrel tip, tilting with the cannon), so the
+        // ball leaves exactly where + how the gunner aimed: level barrel → near-flat shot, raised → parabola.
+        Vector3 vel = MuzzleForward.normalized * muzzleSpeed;
+        _nextFireTime = Time.time + reloadTime;
+        SpawnBall(MuzzlePos, vel, attacker, true);
+        FireClientRpc(MuzzlePos, vel, attacker);
+        return true;
+    }
+
     [Rpc(SendTo.NotServer)]
     private void FireClientRpc(Vector3 pos, Vector3 vel, ulong attacker) => SpawnBall(pos, vel, attacker, false);
 
@@ -70,8 +148,8 @@ public class ShipCannon : NetworkBehaviour
         var ball = Instantiate(cannonBallPrefab, pos, rot);
         var proj = ball.GetComponent<CannonBallProjectile>();
         if (proj == null) proj = ball.AddComponent<CannonBallProjectile>();
-        // Cannon: enemy team, may hole a hull (hitCharactersOnly=false); ignores its own ship.
-        proj.Launch(vel, projectileGravity, projectileLifetime, damage, attacker, Team.Enemy, authority, false, transform, impactFx, 1f);
+        // Cannon: may hole a hull (hitCharactersOnly=false); ignores its own ship; friendly fire off via team.
+        proj.Launch(vel, projectileGravity, projectileLifetime, damage, attacker, team, DamageType.Cannon, authority, false, transform, impactFx, 1f);
         if (muzzleFx != null)
         {
             var fx = Instantiate(muzzleFx, pos, rot);

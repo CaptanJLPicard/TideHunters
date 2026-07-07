@@ -22,6 +22,7 @@ public class CannonBallProjectile : MonoBehaviour
     private int _damage;
     private ulong _attacker;
     private Team _attackerTeam;
+    private DamageType _damageType;
     private bool _authority;
     private bool _hitCharactersOnly;
     private Transform _ignoreRoot;
@@ -31,10 +32,10 @@ public class CannonBallProjectile : MonoBehaviour
     private bool _launched;
 
     public void Launch(Vector3 velocity, float gravity, float lifetime, int damage, ulong attacker,
-        Team attackerTeam, bool authority, bool hitCharactersOnly, Transform ignoreRoot, GameObject impactFx, float impactFxScale)
+        Team attackerTeam, DamageType damageType, bool authority, bool hitCharactersOnly, Transform ignoreRoot, GameObject impactFx, float impactFxScale)
     {
         _vel = velocity; _gravity = gravity; _life = lifetime; _damage = damage;
-        _attacker = attacker; _attackerTeam = attackerTeam; _authority = authority;
+        _attacker = attacker; _attackerTeam = attackerTeam; _damageType = damageType; _authority = authority;
         _hitCharactersOnly = hitCharactersOnly; _ignoreRoot = ignoreRoot;
         _impactFx = impactFx; _impactFxScale = impactFxScale;
         _prev = transform.position;
@@ -44,7 +45,7 @@ public class CannonBallProjectile : MonoBehaviour
 
     /// <summary>Spawn a projectile from a prefab and launch it in one call (used by the cannon and both guns).</summary>
     public static CannonBallProjectile Spawn(GameObject prefab, Vector3 pos, Vector3 velocity, float gravity,
-        float lifetime, int damage, ulong attacker, Team attackerTeam, bool authority, bool hitCharactersOnly,
+        float lifetime, int damage, ulong attacker, Team attackerTeam, DamageType damageType, bool authority, bool hitCharactersOnly,
         Transform ignoreRoot, GameObject impactFx, float impactFxScale)
     {
         if (prefab == null) return null;
@@ -52,7 +53,7 @@ public class CannonBallProjectile : MonoBehaviour
         var go = Instantiate(prefab, pos, rot);
         var p = go.GetComponent<CannonBallProjectile>();
         if (p == null) p = go.AddComponent<CannonBallProjectile>();
-        p.Launch(velocity, gravity, lifetime, damage, attacker, attackerTeam, authority, hitCharactersOnly, ignoreRoot, impactFx, impactFxScale);
+        p.Launch(velocity, gravity, lifetime, damage, attacker, attackerTeam, damageType, authority, hitCharactersOnly, ignoreRoot, impactFx, impactFxScale);
         return p;
     }
 
@@ -73,7 +74,7 @@ public class CannonBallProjectile : MonoBehaviour
             {
                 var h = hit.collider.GetComponentInParent<Health>();
                 IDamageable dmg = h != null ? h : (_hitCharactersOnly ? null : hit.collider.GetComponentInParent<IDamageable>());
-                if (dmg != null && dmg.IsAlive) dmg.ApplyDamage(_damage, _attacker, hit.point);
+                if (dmg != null && dmg.IsAlive) dmg.ApplyDamage(_damage, _attacker, hit.point, _damageType);
             }
             Impact(hit.point);
             return;

@@ -69,7 +69,12 @@ public class PlayerCameraRig
 
     public void BindSceneCamera()
     {
-        _vcam = Object.FindFirstObjectByType<CinemachineCamera>();
+        // Bind the third-person FOLLOW cam specifically — the scene may hold other vcams (e.g. the cannon aim cam),
+        // so we can't just grab "the first CinemachineCamera": pick the one with the over-shoulder body.
+        _vcam = null;
+        foreach (var vc in Object.FindObjectsByType<CinemachineCamera>(FindObjectsSortMode.None))
+            if (vc.GetComponent<CinemachineThirdPersonFollow>() != null) { _vcam = vc; break; }
+        if (_vcam == null) _vcam = Object.FindFirstObjectByType<CinemachineCamera>();
         if (_vcam != null)
         {
             _vcam.Follow = _target;

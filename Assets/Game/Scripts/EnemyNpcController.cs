@@ -38,6 +38,9 @@ public class EnemyNpcController : NetworkBehaviour, IAimSource
     [SerializeField] private Transform homePoint;
     [Tooltip("Idle posture at the home point: 1=Kneel, 2=Warrior, 3=Sit, 4=Carry(driver).")]
     [SerializeField] private int homePosture = PostureWarrior;
+    [Tooltip("The cannon gunner: stays working the gun during a cannon-hit boarding order while the other 4 crew " +
+             "swim across to board the player ship.")]
+    [SerializeField] private bool isCannonCrew;
 
     [Header("Combat (HeavyGun)")]
     [SerializeField] private Transform gunMuzzle;         // Muzzle child of the held HeavyGun
@@ -66,6 +69,9 @@ public class EnemyNpcController : NetworkBehaviour, IAimSource
     [Tooltip("Max distance a crew member roams from its post while patrolling/fighting — keeps it safely on the " +
              "deck near its station instead of backing off into the sea.")]
     [SerializeField] private float maxRoam = 3.2f;
+    [Tooltip("Climb aboard a ship as soon as the swimmer gets within this distance of its hull (so they don't " +
+             "linger stuck against the side waiting to reach an interior point).")]
+    [SerializeField] private float boardReachRadius = 3f;
 
     /// <summary>All spawned crew (server + clients), for cheap neighbour separation queries.</summary>
     public static readonly List<EnemyNpcController> All = new List<EnemyNpcController>();
@@ -119,6 +125,9 @@ public class EnemyNpcController : NetworkBehaviour, IAimSource
     private static readonly int PostureHash = Animator.StringToHash("Posture");
     private static readonly int GunAHash = Animator.StringToHash("GunA");
     private static readonly int GunSpeedHash = Animator.StringToHash("GunSpeed");
+    private static readonly int DieHash = Animator.StringToHash("Die");
+    private static readonly int DeathTypeHash = Animator.StringToHash("DeathType");
+    private float _corpseVelY;
 
     // ================= IAimSource =================
     public float AimPitch => _current.Pitch;
@@ -130,6 +139,9 @@ public class EnemyNpcController : NetworkBehaviour, IAimSource
 
     /// <summary>True while this crew member is alive (the commander counts these as its crew-aboard).</summary>
     public bool IsAlive => _health == null || _health.IsAlive;
+
+    /// <summary>The enemy ship this crew member belongs to (used when the ship is wrecked to drown + despawn its crew).</summary>
+    public EnemyShipAI CommanderShip => ship;
 
     // ================= lifecycle =================
     public override void OnNetworkSpawn()
@@ -188,6 +200,26 @@ public class EnemyNpcController : NetworkBehaviour, IAimSource
         return best;
     }
 
+    /// <summary>Spawner hook (server): bind this crew member to a runtime-spawned ship + its post and snap it there.</summary>
+    public void ConfigureServer(EnemyShipAI shipAi, Transform post, int posture, bool cannonCrew)
+    {
+        if (!IsServer) return;
+        ship = shipAi;
+        homePoint = post;
+        homePosture = posture;
+        isCannonCrew = cannonCrew;
+        _homeShip = shipAi != null ? shipAi.GetComponent<ShipController>() : null;
+        if (post != null)
+        {
+            Teleport(post.position);
+            _current.Position = post.position;
+            _current.Yaw = post.eulerAngles.y;
+            _current.AimYaw = post.eulerAngles.y;
+        }
+        _deckRider.SetPlatform(_homeShip);
+        _netState.Value = ToNetworkState();
+    }
+
     // ================= server simulation =================
     private void Update()
     {
@@ -203,6 +235,9 @@ public class EnemyNpcController : NetworkBehaviour, IAimSource
     {
         _freeSwim = false; // default: constrained to the deck (edge sensors on). Water phases turn this on.
         ShipMode mode = ship != null ? MapMode(ship.Mode) : ShipMode.Idle;
+
+        // Cannon-hit boarding order: the 4 non-cannon crew leap across to the player ship; the gunner keeps firing.
+        if (ship != null && ship.BoardOrder && !isCannonCrew && ship.PlayerShip != null) mode = ShipMode.Invade;
 
         if (mode == ShipMode.Invade) { Invade(dt); return; } // actively counter-boarding the player ship
 
@@ -230,7 +265,7 @@ public class EnemyNpcController : NetworkBehaviour, IAimSource
         if (goal == null) { StandStill(dt); return; }
         Vector3 board = goal.DeckBoardPoint;
         MoveToward(board, true, 0f, false, dt);       // swim/run for the rail
-        if (Vector3.Distance(Flat(transform.position), Flat(board)) < 2.5f)
+        if (NearHull(goal, boardReachRadius) || Vector3.Distance(Flat(transform.position), Flat(board)) < 2.5f)
         {
             Teleport(board);
             _current.Position = board;
@@ -344,10 +379,11 @@ public class EnemyNpcController : NetworkBehaviour, IAimSource
         if (ps == null) { StandStill(dt); return; }
         _aiming.Value = false;
         _freeSwim = true; // leaping into the sea toward the player ship — swim freely, no deck-edge constraint
-        // Head for the player ship's boarding spot; once close, snap aboard as a passenger (same as a player climbing on).
+        // Swim for the player ship; climb aboard the instant we reach its hull (don't linger at the side trying
+        // to reach an interior point the hull blocks).
         Vector3 board = ps.DeckBoardPoint;
-        MoveToward(board, true, 0f, false, dt); // sprint/swim toward the rail / gap
-        if (Vector3.Distance(Flat(transform.position), Flat(board)) < 2.5f)
+        MoveToward(board, true, 0f, false, dt);
+        if (NearHull(ps, boardReachRadius) || Vector3.Distance(Flat(transform.position), Flat(board)) < 2.5f)
             BoardPlayerShip(ps);
     }
 
@@ -359,6 +395,14 @@ public class EnemyNpcController : NetworkBehaviour, IAimSource
         _current.VerticalVelocity = 0f;
         _boardedShip = ps;
         _deckRider.SetPlatform(ps);
+    }
+
+    // Close enough to a ship's hull to climb aboard (so a swimmer boards on contact instead of waiting at the side).
+    private bool NearHull(ShipController ship, float radius)
+    {
+        if (ship == null) return false;
+        Vector3 hull = ship.ClosestHullPoint(transform.position);
+        return Vector3.Distance(Flat(transform.position), Flat(hull)) < radius;
     }
 
     // ================= movement primitive =================
@@ -603,13 +647,13 @@ public class EnemyNpcController : NetworkBehaviour, IAimSource
         Vector3 vel = aim * bulletSpeed;
         // Authority bullet carries the damage (Team.Enemy → only hurts players, never crew); clients spawn a matching tracer.
         CannonBallProjectile.Spawn(bulletPrefab, origin, vel, bulletGravity, bulletLife, gunDamage,
-            NetworkManager.ServerClientId, Team.Enemy, true, true, transform, bulletImpactFx, 1f);
+            NetworkManager.ServerClientId, Team.Enemy, DamageType.Gun, true, true, transform, bulletImpactFx, 1f);
         FireBulletClientRpc(origin, vel);
     }
 
     [Rpc(SendTo.NotServer)]
     private void FireBulletClientRpc(Vector3 pos, Vector3 vel) =>
-        CannonBallProjectile.Spawn(bulletPrefab, pos, vel, bulletGravity, bulletLife, 0, 0UL, Team.Enemy, false, true, transform, bulletImpactFx, 1f);
+        CannonBallProjectile.Spawn(bulletPrefab, pos, vel, bulletGravity, bulletLife, 0, 0UL, Team.Enemy, DamageType.Gun, false, true, transform, bulletImpactFx, 1f);
 
     // ================= render (both roles) =================
     private void LateUpdate()
@@ -637,6 +681,7 @@ public class EnemyNpcController : NetworkBehaviour, IAimSource
                     if (deck != null && _boardedShip == null && deck != _homeShip) { /* stepped onto another deck */ }
                 }
             }
+            else CorpseUpdate(Time.deltaTime);                  // dead: ride the deck we fell on, or drop to the ground
             _netState.Value = ToNetworkState();
         }
         else
@@ -735,6 +780,16 @@ public class EnemyNpcController : NetworkBehaviour, IAimSource
     private void ApplyAnimator(float dt)
     {
         if (_animator == null || _animator.runtimeAnimatorController == null) return;
+
+        // Dead: let the full-body death clip (Base Layer) play cleanly — drop the idle-pose + gun overlay layers
+        // and stop feeding locomotion/aim params.
+        if (_health != null && !_health.IsAlive)
+        {
+            if (_postureLayer >= 0) { _postureWeight = 0f; _animator.SetLayerWeight(_postureLayer, 0f); }
+            if (_upperLayer >= 0) { _gunWeight = 0f; _animator.SetLayerWeight(_upperLayer, 0f); }
+            return;
+        }
+
         _anim.Apply(_current, dt);
 
         int posture = _posture.Value;
@@ -789,9 +844,34 @@ public class EnemyNpcController : NetworkBehaviour, IAimSource
     {
         _aiming.Value = false;
         _posture.Value = PostureNone;
-        if (IsServer) { _pinned = false; SetCC(false); }
-        // Freeze as a corpse (no ragdoll rig set up). Leave the last pose; could despawn on a timer later.
-        enabled = enabled; // keep component; brain early-outs on !IsAlive
+        _corpseVelY = 0f;
+        // Play the death clip matching the weapon that killed us (2=Sword, else gun). Fires on every peer.
+        if (_animator != null)
+        {
+            _animator.SetInteger(DeathTypeHash, _health != null ? (int)_health.LastDamageType : 1);
+            _animator.SetTrigger(DieHash);
+        }
+        if (IsServer) _pinned = false;
+        // Keep the CharacterController so the corpse rides the deck it died on, or falls to the ground if it died
+        // over the sea / off an edge (CorpseUpdate in LateUpdate). No ragdoll rig — it settles in the death pose.
+    }
+
+    // Server-side dead-body physics: ride the deck it fell on, else fall under gravity until it hits ground, so a
+    // body that dies over the sea / steps back off a ledge doesn't hang in the air.
+    private void CorpseUpdate(float dt)
+    {
+        _pinned = false;
+        SetCC(true);
+        var deck = _deckRider.DetectAndCarry();
+        if (deck != null) _corpseVelY = 0f;
+        else if (_cc != null && _cc.enabled)
+        {
+            _corpseVelY += motor.gravity * dt;
+            _cc.Move(Vector3.up * (_corpseVelY * dt));
+            if (_cc.isGrounded && _corpseVelY < 0f) _corpseVelY = 0f;
+        }
+        _current.Position = transform.position;
+        _current.Speed = 0f; _current.MoveX = 0f; _current.MoveY = 0f;
     }
 
     // ================= helpers =================

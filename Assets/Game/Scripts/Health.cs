@@ -25,10 +25,15 @@ public class Health : NetworkBehaviour, IDamageable
 
     private readonly NetworkVariable<int> _hp = new(0,
         NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    private readonly NetworkVariable<DamageType> _lastType = new(DamageType.Generic,
+        NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private readonly NetworkVariable<bool> _dead = new(false,
         NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     private ulong _lastAttacker;
+
+    /// <summary>The kind of hit that most recently damaged this character — drives the death animation.</summary>
+    public DamageType LastDamageType => _lastType.Value;
 
     public int Max => maxHealth;
     public int Current => _hp.Value;
@@ -60,10 +65,11 @@ public class Health : NetworkBehaviour, IDamageable
     private void HandleHpChanged(int _, int now) => OnChanged?.Invoke(now, maxHealth);
     private void HandleDeadChanged(bool was, bool now) { if (now && !was) OnDeath?.Invoke(_lastAttacker); }
 
-    public void ApplyDamage(int amount, ulong attacker, Vector3 hitPoint)
+    public void ApplyDamage(int amount, ulong attacker, Vector3 hitPoint, DamageType type)
     {
         if (!IsServer || _dead.Value || amount <= 0) return;
         _lastAttacker = attacker;
+        _lastType.Value = type;
         int v = Mathf.Max(0, _hp.Value - amount);
         _hp.Value = v;
         if (v == 0) _dead.Value = true;
@@ -75,5 +81,13 @@ public class Health : NetworkBehaviour, IDamageable
         if (!IsServer) return;
         _dead.Value = false;
         _hp.Value = maxHealth;
+    }
+
+    /// <summary>Server: revive a downed character with a partial amount of hit points (teammate revive).</summary>
+    public void ReviveServer(int hp)
+    {
+        if (!IsServer || !_dead.Value) return;
+        _dead.Value = false;
+        _hp.Value = Mathf.Clamp(hp, 1, maxHealth);
     }
 }

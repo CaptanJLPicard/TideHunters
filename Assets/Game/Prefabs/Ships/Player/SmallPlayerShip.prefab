@@ -854,6 +854,8 @@ GameObject:
   - component: {fileID: 6532941337970815930}
   - component: {fileID: 1004545995170159525}
   - component: {fileID: 2841729080866610455}
+  - component: {fileID: 7325282451906761338}
+  - component: {fileID: 8607157206797150174}
   m_Layer: 0
   m_Name: SmallPlayerShip
   m_TagString: Untagged
@@ -881,6 +883,8 @@ Transform:
   - {fileID: 6826014498696218359}
   - {fileID: 2016032653349906788}
   - {fileID: 5227454041527718626}
+  - {fileID: 8469710967958983864}
+  - {fileID: 8374429158308258265}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: -41.818, z: 0}
 --- !u!33 &1010212084940540684
@@ -974,8 +978,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 902304472
-  InScenePlacedSourceGlobalObjectIdHash: 0
+  GlobalObjectIdHash: 817753002
+  InScenePlacedSourceGlobalObjectIdHash: 2773200533
   DeferredDespawnTick: 0
   Ownership: 1
   AlwaysReplicateAsRoot: 0
@@ -1001,11 +1005,16 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ShipController
   ShowTopMostFoldoutHeaderGroup: 1
+  Disabled: 0
+  collisionRadius: 6
+  collisionDamage: 20
+  collisionCooldown: 1.5
   maxSpeed: 9
   accel: 1.1
   decel: 0.7
   turnRate: 13
   turnSmooth: 1.4
+  stationaryTurn: 0.4
   maxBank: 9
   bankSmooth: 1.3
   waveCount: 4
@@ -1014,8 +1023,15 @@ MonoBehaviour:
   waveSpeed: 20
   waveAmplitude: 0.431
   tiltGain: 2.2
+  tiltSmooth: 2.5
   sampleSpanZ: 5
   sampleSpanX: 5
+  blockLand: 1
+  waterLevel: -1.6
+  minDepth: 1.5
+  clampToSea: 0
+  seaCenter: {x: 0, y: 0}
+  seaHalfExtents: {x: 300, y: 300}
   openSails: {fileID: 3398277183155153983}
   furledSails: {fileID: 5417351507757619335}
   shipWheel: {fileID: 8782731184858066509}
@@ -1025,6 +1041,63 @@ MonoBehaviour:
   camTarget: {fileID: 5227454041527718626}
   wheelMaxAngle: 120
   waterEffectSpeed: 2.5
+--- !u!114 &7325282451906761338
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4396375154692669549}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 224b1503457da394283a1247888a0fac, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ShipHealth
+  ShowTopMostFoldoutHeaderGroup: 1
+  maxHealth: 100
+  stageObjects: []
+  stageMinFraction:
+  - 0.7
+  - 0.4
+  - 0.1
+  - 0
+  fireEffectPrefab: {fileID: 197308, guid: 62180f02a86555049a8b4bc3fe456b38, type: 3}
+  fireRoots: {fileID: 2959023955889872103}
+  maxFires: 14
+  fireStartFraction: 0.85
+  fireRampSpeed: 2.5
+  fireScale: 1
+  sinkOnDeath: 1
+  sinkSpeed: 0.35
+  sinkMaxDepth: 9
+  sinkTilt: 16
+--- !u!114 &8607157206797150174
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4396375154692669549}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 816ff18998c2199459dc07fe8f88a22e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ShipCannon
+  ShowTopMostFoldoutHeaderGroup: 1
+  muzzle: {fileID: 8469710967958983864}
+  cannonBallPrefab: {fileID: 2581150927407310366, guid: b6d08d550b1810b458fa18c9947c6f79, type: 3}
+  muzzleFx: {fileID: 0}
+  impactFx: {fileID: 0}
+  muzzleSpeed: 34
+  projectileGravity: -11
+  projectileLifetime: 6
+  launchElevation: 24
+  maxRange: 60
+  minRange: 8
+  reloadTime: 1.8
+  damage: 10
+  aimTolerance: 12
+  team: 0
 --- !u!1 &4407889170799298967
 GameObject:
   m_ObjectHideFlags: 0
@@ -1733,6 +1806,37 @@ Transform:
   m_Children: []
   m_Father: {fileID: 4020436662759837485}
   m_LocalEulerAnglesHint: {x: 0, y: -78.739, z: 0}
+--- !u!1 &6742677993074121187
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 8469710967958983864}
+  m_Layer: 0
+  m_Name: PlayerMuzzle
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &8469710967958983864
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6742677993074121187}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 2.7, z: 6}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 9076932168401141852}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &6976837952868644063
 GameObject:
   m_ObjectHideFlags: 0
@@ -1860,6 +1964,37 @@ Transform:
   - {fileID: 342568533627639034}
   m_Father: {fileID: 9076932168401141852}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &8095972094744051088
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 8374429158308258265}
+  m_Layer: 0
+  m_Name: CannonCameraPos
+  m_TagString: Untagged
+  m_Icon: {fileID: 3306451490063965843, guid: 0000000000000000d000000000000000, type: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &8374429158308258265
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8095972094744051088}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0.0022470036, y: 0.02005133, z: -0.00004504231, w: -0.99979645}
+  m_LocalPosition: {x: -0.17, y: 4.07, z: 2.18}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 9076932168401141852}
+  m_LocalEulerAnglesHint: {x: 0.258, y: -2.298, z: 0}
 --- !u!1 &8474587365525483821
 GameObject:
   m_ObjectHideFlags: 0

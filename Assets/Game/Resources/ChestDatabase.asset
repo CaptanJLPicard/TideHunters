@@ -20,6 +20,7 @@ MonoBehaviour:
     carryPosition: {x: 0, y: -0.06, z: 0.08}
     carryEuler: {x: 0, y: 0, z: 0}
     carryScale: 1
+    goldReward: 500
     swimIdleArmRaise: 90.7
     swimMoveArmRaise: 130
   - id: 2
@@ -29,6 +30,7 @@ MonoBehaviour:
     carryPosition: {x: 0, y: 0.07, z: 0.2}
     carryEuler: {x: -13.75, y: 0, z: 0}
     carryScale: 1
+    goldReward: 1200
     swimIdleArmRaise: 83.76
     swimMoveArmRaise: 130
   - id: 3
@@ -38,5 +40,6 @@ MonoBehaviour:
     carryPosition: {x: 0, y: 0.09, z: 0.26}
     carryEuler: {x: -13.75, y: 0, z: 0}
     carryScale: 1
+    goldReward: 2500
     swimIdleArmRaise: 80
     swimMoveArmRaise: 130

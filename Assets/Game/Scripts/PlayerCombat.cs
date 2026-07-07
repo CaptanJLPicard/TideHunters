@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -59,6 +60,12 @@ public class PlayerCombat : NetworkBehaviour
     [SerializeField] private float bulletLife = 1.2f;
     [Tooltip("Ray origin height above the player's feet, used only when the gun has no Muzzle child.")]
     [SerializeField] private float gunEyeHeight = 1.5f;
+
+    [Header("Sword (server melee)")]
+    [SerializeField] private int swordDamage = 30;
+    [SerializeField] private float swordRange = 2.6f;
+    [Tooltip("Hit cone (deg) in front of the player.")]
+    [SerializeField] private float swordArc = 150f;
 
     /// <summary>Debug: freeze the player in the gun aim pose (ignores input) so the aim can be tuned in the
     /// Inspector. Toggled by the button on PlayerSpineAim. Not serialized — never persists past play.</summary>
@@ -171,7 +178,26 @@ public class PlayerCombat : NetworkBehaviour
 
     [Rpc(SendTo.Server)] private void SetAimRpc(bool a) => _aiming.Value = a;
     [Rpc(SendTo.Server)] private void FireRpc() { if (_aiming.Value) { _fireStamp.Value++; ServerFireBullet(); } }
-    [Rpc(SendTo.Server)] private void SlashRpc(byte variant) { _slashVariant.Value = variant; _slashStamp.Value++; }
+    [Rpc(SendTo.Server)] private void SlashRpc(byte variant) { _slashVariant.Value = variant; _slashStamp.Value++; ServerSwordHit(); }
+
+    // Server-authoritative melee: a forward cone sweep that damages every enemy character in reach. Guns fire a
+    // bullet (ServerFireBullet); swords land here — so all four shop weapons deal damage.
+    private void ServerSwordHit()
+    {
+        Vector3 origin = transform.position + Vector3.up * 1.0f;
+        Vector3 fwd = transform.forward;
+        var hits = Physics.OverlapSphere(origin, swordRange, ~0, QueryTriggerInteraction.Ignore);
+        var done = new HashSet<Health>();
+        foreach (var c in hits)
+        {
+            var h = c.GetComponentInParent<Health>();
+            if (h == null || !h.IsAlive || h.Side == Team.Player || done.Contains(h)) continue; // enemies only, never players
+            Vector3 to = h.transform.position - origin; to.y = 0f;
+            if (to.sqrMagnitude > 0.01f && Vector3.Angle(fwd, to) > swordArc * 0.5f) continue;   // must be in the swing cone
+            done.Add(h);
+            h.ApplyDamage(swordDamage, OwnerClientId, h.transform.position, DamageType.Sword);
+        }
+    }
 
     // Server-authoritative gun shot: a physical tracer bullet from the gun muzzle along the replicated aim.
     // The server copy carries the damage (Team.Player → only hurts enemies, never other players or ships);
@@ -182,13 +208,13 @@ public class PlayerCombat : NetworkBehaviour
         Vector3 origin = _inv != null && _inv.HeldMuzzle != null ? _inv.HeldMuzzle.position : transform.position + Vector3.up * gunEyeHeight;
         Vector3 vel = _pc.AimDirection.normalized * bulletSpeed;
         CannonBallProjectile.Spawn(bulletPrefab, origin, vel, bulletGravity, bulletLife, gunDamage,
-            OwnerClientId, Team.Player, true, true, transform, bulletImpactFx, 1f);
+            OwnerClientId, Team.Player, DamageType.Gun, true, true, transform, bulletImpactFx, 1f);
         FireBulletClientRpc(origin, vel);
     }
 
     [Rpc(SendTo.NotServer)]
     private void FireBulletClientRpc(Vector3 pos, Vector3 vel) =>
-        CannonBallProjectile.Spawn(bulletPrefab, pos, vel, bulletGravity, bulletLife, 0, 0UL, Team.Player, false, true, transform, bulletImpactFx, 1f);
+        CannonBallProjectile.Spawn(bulletPrefab, pos, vel, bulletGravity, bulletLife, 0, 0UL, Team.Player, DamageType.Gun, false, true, transform, bulletImpactFx, 1f);
 
     private void DriveAnimation()
     {

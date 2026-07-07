@@ -16,10 +16,13 @@ public class PauseMenu : MonoBehaviour
 {
     [SerializeField] private GameObject escRoot;
     [SerializeField] private Button resumeButton;
+    [SerializeField] private Button saveButton;
     [SerializeField] private Button restartButton;
     [SerializeField] private Button mainMenuButton;
     [Tooltip("Optional 'host only' note shown to clients under the restart button.")]
     [SerializeField] private TMP_Text restartHint;
+    [Tooltip("Brief 'Saved to Slot N' confirmation under the Save button.")]
+    [SerializeField] private TMP_Text saveHint;
 
     /// <summary>True while the pause menu is showing — player input scripts skip their input while it is.</summary>
     public static bool IsOpen { get; private set; }
@@ -27,8 +30,10 @@ public class PauseMenu : MonoBehaviour
     private void Awake()
     {
         if (resumeButton != null) resumeButton.onClick.AddListener(Close);
+        if (saveButton != null) saveButton.onClick.AddListener(SaveGame);
         if (restartButton != null) restartButton.onClick.AddListener(Restart);
         if (mainMenuButton != null) mainMenuButton.onClick.AddListener(LeaveToMenu);
+        if (saveHint != null) saveHint.gameObject.SetActive(false);
         SetOpen(false);
     }
 
@@ -63,6 +68,18 @@ public class PauseMenu : MonoBehaviour
     }
 
     private void Close() => SetOpen(false);
+
+    // Save the LOCAL player's gold / inventory / position to their active slot (host and clients each save locally).
+    private void SaveGame()
+    {
+        var agent = PlayerSaveAgent.Local;
+        bool ok = agent != null && agent.SaveLocal();
+        if (saveHint != null)
+        {
+            saveHint.gameObject.SetActive(true);
+            saveHint.text = ok ? "Saved to Slot " + (SaveSystem.ActiveSlot + 1) : "Save failed";
+        }
+    }
 
     // Host-only, synced: reload the active scene for everyone via Netcode scene management.
     private void Restart()

@@ -30,6 +30,10 @@ public class TestingNetcodeUI : MonoBehaviour
     [SerializeField] private TMP_InputField createInput;
     [SerializeField] private TMP_InputField joinInput;
 
+    [Header("Save slots (Create panel)")]
+    [SerializeField] private Button[] slotButtons;     // one per SaveSystem slot
+    [SerializeField] private TMP_Text[] slotSummaries; // "Slot 1 — 1250 G" / "Empty"
+
     [Header("Buttons")]
     [SerializeField] private Button gotoCreateButton;
     [SerializeField] private Button gotoJoinButton;
@@ -58,6 +62,14 @@ public class TestingNetcodeUI : MonoBehaviour
         Wire(createBackButton, () => ShowState(0));
         Wire(joinBackButton, () => ShowState(0));
         Wire(errorOkButton, () => { if (errorPanel) errorPanel.SetActive(false); ShowState(2); });
+
+        // Each save slot: pick it as the active slot, then host + load it on spawn.
+        if (slotButtons != null)
+            for (int i = 0; i < slotButtons.Length; i++)
+            {
+                int slot = i;
+                Wire(slotButtons[i], () => { SaveSystem.ActiveSlot = slot; Host(); });
+            }
 
         ShowState(0);
         if (errorPanel) errorPanel.SetActive(false);
@@ -178,7 +190,15 @@ public class TestingNetcodeUI : MonoBehaviour
         if (mainPanel != null) mainPanel.SetActive(i == 0);
         if (createPanel != null) createPanel.SetActive(i == 1);
         if (joinPanel != null) joinPanel.SetActive(i == 2);
+        if (i == 1) RefreshSlots();  // show each save's summary when the Create panel opens
         SetStatus("");
+    }
+
+    private void RefreshSlots()
+    {
+        if (slotSummaries == null) return;
+        for (int i = 0; i < slotSummaries.Length; i++)
+            if (slotSummaries[i] != null) slotSummaries[i].text = "SLOT " + (i + 1) + "\n<size=60%>" + SaveSystem.Summary(i) + "</size>";
     }
 
     private void ShowError(string title, string detail)

@@ -24,6 +24,9 @@ public class ChestDef
     public Vector3 carryEuler;        // local rotation
     public float carryScale = 1f;
 
+    [Tooltip("Gold awarded to every player when this chest is delivered to Home.")]
+    public int goldReward = 500;
+
     [Header("Swim — raise both arms so the chest stays above the water")]
     [Tooltip("Degrees both arms are raised while treading water (standing/idle in the water). The chest " +
              "tracks the hands, so raising the arms lifts the chest with them.")]

@@ -7,6 +7,7 @@ public class ShopEntry
 {
     public Transform item;
     public WeaponId weapon;
+    public int price = 100;   // gold cost to buy
 }
 
 /// <summary>
@@ -39,6 +40,7 @@ public class ShopManager : MonoBehaviour
         return rend != null ? rend.bounds.center : item.position;
     }
     public WeaponId Weapon(int id) => entries[id].weapon;
+    public int Price(int id) => id >= 0 && id < Count ? entries[id].price : 0;
     public string Name(int id) =>
         WeaponDatabase.Instance != null ? WeaponDatabase.Instance.NameOf(entries[id].weapon) : entries[id].weapon.ToString();
 

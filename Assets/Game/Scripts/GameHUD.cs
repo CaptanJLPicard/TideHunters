@@ -30,6 +30,20 @@ public class GameHUD : MonoBehaviour
     private TMP_Text _healthLabel;
     private Health _health;
 
+    // Ship health bar (authored under GamePanel/ShipHealthBar; shown above the player bar while aboard a ship).
+    private GameObject _shipBarRoot;
+    private Image _shipFill;
+    private TMP_Text _shipLabel;
+    private ShipHealth _boundShip;
+    private PlayerController _localPc;
+
+    // Gold counter (authored under GamePanel/GoldCounter/Label; top-right, bound to the local player's wallet).
+    private TMP_Text _goldLabel;
+    private PlayerWallet _wallet;
+
+    // Top-center warning shown to living players while a teammate is down and awaiting revive.
+    private GameObject _downedWarn;
+
     private void Awake()
     {
         Instance = this;
@@ -68,6 +82,27 @@ public class GameHUD : MonoBehaviour
             var lbl = hb.Find("Label");
             _healthLabel = lbl != null ? lbl.GetComponent<TMP_Text>() : null;
         }
+
+        var sb = transform.Find("ShipHealthBar");
+        if (sb != null)
+        {
+            _shipBarRoot = sb.gameObject;
+            var fill = sb.Find("FillArea/Fill") ?? sb.Find("Fill");
+            _shipFill = fill != null ? fill.GetComponent<Image>() : null;
+            var lbl = sb.Find("Label");
+            _shipLabel = lbl != null ? lbl.GetComponent<TMP_Text>() : null;
+            _shipBarRoot.SetActive(false);
+        }
+
+        var gc = transform.Find("GoldCounter");
+        if (gc != null)
+        {
+            var lbl = gc.Find("Label") ?? gc;
+            _goldLabel = lbl.GetComponent<TMP_Text>();
+        }
+
+        var dw = transform.Find("DownedWarning");
+        if (dw != null) { _downedWarn = dw.gameObject; _downedWarn.SetActive(false); }
     }
 
     private void OnDestroy()
@@ -75,6 +110,8 @@ public class GameHUD : MonoBehaviour
         if (Instance == this) Instance = null;
         if (_inv != null) _inv.OnChanged -= Refresh;
         if (_health != null) _health.OnChanged -= RefreshHealth;
+        if (_boundShip != null) _boundShip.OnChanged -= RefreshShipHealth;
+        if (_wallet != null) _wallet.OnChanged -= RefreshGold;
     }
 
     private void Update()
@@ -89,6 +126,15 @@ public class GameHUD : MonoBehaviour
         {
             _health = FindLocalHealth();
             if (_health != null) { _health.OnChanged += RefreshHealth; RefreshHealth(_health.Current, _health.Max); }
+        }
+
+        UpdateShipBar();
+        UpdateDownedWarning();
+
+        if (_wallet == null && _localPc != null)
+        {
+            _wallet = _localPc.GetComponent<PlayerWallet>();
+            if (_wallet != null) { _wallet.OnChanged += RefreshGold; RefreshGold(_wallet.Gold); }
         }
 
         // Smooth popup for the prompt: fade + scale with a slight overshoot on appear.
@@ -128,6 +174,61 @@ public class GameHUD : MonoBehaviour
         float frac = max > 0 ? Mathf.Clamp01((float)cur / max) : 0f;
         if (_healthFill != null) { _healthFill.fillAmount = frac; _healthFill.color = Color.Lerp(HpLow, HpHigh, frac); }
         if (_healthLabel != null) _healthLabel.text = cur + " / " + max;
+    }
+
+    private static PlayerController FindLocalPlayer()
+    {
+        foreach (var pc in FindObjectsByType<PlayerController>(FindObjectsSortMode.None))
+            if (pc.IsSpawned && pc.IsOwner) return pc;
+        return null;
+    }
+
+    // Show the ship health bar (above the player bar) only while the local player is aboard a ship; bind it to
+    // that ship's ShipHealth.
+    private void UpdateShipBar()
+    {
+        if (_localPc == null) _localPc = FindLocalPlayer();
+        if (_localPc == null) return;
+        var ship = _localPc.RidingShip;
+        var sh = ship != null ? ship.GetComponent<ShipHealth>() : null;
+        if (sh != _boundShip)
+        {
+            if (_boundShip != null) _boundShip.OnChanged -= RefreshShipHealth;
+            _boundShip = sh;
+            if (_boundShip != null) { _boundShip.OnChanged += RefreshShipHealth; RefreshShipHealth(_boundShip.Current, _boundShip.Max); }
+        }
+        if (_shipBarRoot != null && _shipBarRoot.activeSelf != (_boundShip != null))
+            _shipBarRoot.SetActive(_boundShip != null);
+    }
+
+    private void RefreshShipHealth(int cur, int max)
+    {
+        float frac = max > 0 ? Mathf.Clamp01((float)cur / max) : 0f;
+        if (_shipFill != null) { _shipFill.fillAmount = frac; _shipFill.color = Color.Lerp(HpLow, HpHigh, frac); }
+        if (_shipLabel != null) _shipLabel.text = "SHIP  " + cur + " / " + max;
+    }
+
+    private void RefreshGold(int gold)
+    {
+        if (_goldLabel != null) _goldLabel.text = gold + " G";
+    }
+
+    // Warn living players (top-center) while any teammate is down awaiting revive.
+    private void UpdateDownedWarning()
+    {
+        if (_downedWarn == null) return;
+        bool localAlive = _health == null || _health.IsAlive;
+        bool anyDown = false;
+        if (localAlive)
+        {
+            var all = Health.All;
+            for (int i = 0; i < all.Count; i++)
+            {
+                var h = all[i];
+                if (h != null && h != _health && h.Side == Team.Player && !h.IsAlive) { anyDown = true; break; }
+            }
+        }
+        if (_downedWarn.activeSelf != anyDown) _downedWarn.SetActive(anyDown);
     }
 
     private void Refresh()

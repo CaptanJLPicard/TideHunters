@@ -73,6 +73,17 @@ public class PlayerController : NetworkBehaviour, IAimSource
     /// <summary>True while driving OR standing on a ship's deck (so we don't offer to climb aboard again).</summary>
     public bool IsRidingShip => _drivingShip != null || _platform != null;
 
+    /// <summary>The ship this player is currently on (driving or standing on its deck), or null on foot/in water.</summary>
+    public ShipController RidingShip => _drivingShip != null ? _drivingShip : _platform;
+
+    /// <summary>Owner: snap this player to a world position (used when a save is loaded).</summary>
+    public void TeleportTo(Vector3 pos)
+    {
+        if (_cc != null && _cc.enabled) { _cc.enabled = false; transform.position = pos; _cc.enabled = true; }
+        else transform.position = pos;
+        _current.Position = pos;
+    }
+
     private bool _frozen; // dead: input + movement halted, but the deck-carry, state publish and animator keep running
     /// <summary>Dead-freeze: stop the owner's input/movement, but KEEP riding the deck, replicating the (static)
     /// pose and driving the animator — so the corpse stays glued to the ship instead of sliding off.</summary>
@@ -336,7 +347,7 @@ public class PlayerController : NetworkBehaviour, IAimSource
     private void Update()
     {
         if (!_ownerSim) return;
-        if (_frozen) return; // dead corpse: no input/movement; LateUpdate still carries us on the deck + animates
+        if (_frozen) { CorpseFall(Time.deltaTime); return; } // dead: no input; fall to the ground if off a deck
 
         if (_drivingShip != null) { DriveUpdate(); return; }
 
@@ -406,6 +417,19 @@ public class PlayerController : NetworkBehaviour, IAimSource
         }
         _platform = ground;
         if (ground != null) _platformLastW2L = ground.transform.worldToLocalMatrix;
+    }
+
+    // Dead corpse gravity: if we're not standing on a ship's deck (CarryOnShip handles that case), fall until we
+    // hit ground — so a body that dies over the sea/edge doesn't hang in mid-air.
+    private float _corpseVelY;
+    private void CorpseFall(float dt)
+    {
+        if (_cc == null || !_cc.enabled) return;
+        if (DetectGroundShip() != null) { _corpseVelY = 0f; return; }
+        _corpseVelY += motor.gravity * dt; // gravity is negative
+        _cc.Move(Vector3.up * (_corpseVelY * dt));
+        if (_cc.isGrounded && _corpseVelY < 0f) _corpseVelY = 0f;
+        _current.Position = transform.position;
     }
 
     // The ship directly under our feet (or null). Skips our own collider.

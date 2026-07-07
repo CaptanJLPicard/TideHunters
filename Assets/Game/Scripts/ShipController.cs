@@ -50,6 +50,19 @@ public class ShipController : NetworkBehaviour
     /// <summary>True while an AI pilot is steering this hull — players may board its deck but not take its wheel.</summary>
     public bool AiControlled => Pilot != null;
 
+    /// <summary>Wrecked: no thrust and no steering (set by <see cref="ShipHealth"/> when the hull is destroyed and
+    /// sinking). The hull still floats/rocks; ShipHealth lowers it visually.</summary>
+    public bool Disabled;
+
+    [Header("Ship-vs-ship collision")]
+    [Tooltip("Approximate hull radius (m). Two ships closer than the sum of their radii push apart and take a hit.")]
+    [SerializeField] private float collisionRadius = 5f;
+    [SerializeField] private int collisionDamage = 20;
+    [Tooltip("Seconds between collision-damage ticks for a pair (stops continuous grinding damage).")]
+    [SerializeField] private float collisionCooldown = 1.5f;
+    private float _nextCollisionDamage;
+    public float CollisionRadius => collisionRadius;
+
     [Header("Sailing (heavy feel)")]
     [SerializeField] private float maxSpeed = 9f;
     [SerializeField] private float accel = 1.1f;        // ramp up while sails are open
@@ -81,6 +94,17 @@ public class ShipController : NetworkBehaviour
     [SerializeField] private bool clampToSea = false;    // optional rectangular fence (enable + set if the ship escapes)
     [SerializeField] private Vector2 seaCenter = Vector2.zero;
     [SerializeField] private Vector2 seaHalfExtents = new Vector2(300f, 300f);
+
+    [Header("Play boundary (radial hard limit — nothing crosses it)")]
+    [SerializeField] private bool clampToBoundary = false;
+    [SerializeField] private Vector3 boundaryCenter;     // e.g. the WeaponShop
+    [SerializeField] private float boundaryRadius = 180f;
+
+    public bool HasBoundary => clampToBoundary;
+    public Vector3 BoundaryCenter => boundaryCenter;
+    public float BoundaryRadius => boundaryRadius;
+    /// <summary>Public deep-water test (used by the AI patrol to pick navigable waypoints that dodge islands).</summary>
+    public bool IsDeepWaterAt(float x, float z) => DeepWaterAt(x, z);
 
     [Header("Children")]
     [SerializeField] private GameObject openSails;      // Sails/OpenSails
@@ -169,6 +193,76 @@ public class ShipController : NetworkBehaviour
         if (!IsSpawned) return; // don't touch the transform before OnNetworkSpawn captured the scene pose
         if (IsOwner) SimulateOwner(Time.deltaTime);
         else SmoothRemote(Time.deltaTime);
+        if (IsServer) CheckCollisionDamage();
+    }
+
+    // Owner-side: nudge the next XZ out of any other ship's hull footprint so hulls don't interpenetrate.
+    private void ResolveShipOverlap(ref float x, ref float z, ref float speed)
+    {
+        var ships = Active;
+        for (int i = 0; i < ships.Count; i++)
+        {
+            var o = ships[i];
+            if (o == null || o == this) continue;
+            Vector3 op = o.transform.position;
+            float dx = x - op.x, dz = z - op.z;
+            float distSq = dx * dx + dz * dz;
+            float minD = collisionRadius + o.CollisionRadius;
+            if (distSq < minD * minD && distSq > 1e-4f)
+            {
+                float dist = Mathf.Sqrt(distSq);
+                float push = minD - dist;                 // full separation from our side (the other pushes too)
+                x += (dx / dist) * push;
+                z += (dz / dist) * push;
+                speed = Mathf.Min(speed, maxSpeed * 0.3f); // shed way on impact
+            }
+        }
+    }
+
+    // Server-side: two hulls in contact take collisionDamage each, once per cooldown. Processed once per pair
+    // (by the lower-instance ship) so both hulls are hit exactly once.
+    private void CheckCollisionDamage()
+    {
+        if (Time.time < _nextCollisionDamage) return;
+        var ships = Active;
+        for (int i = 0; i < ships.Count; i++)
+        {
+            var o = ships[i];
+            if (o == null || o == this || GetInstanceID() >= o.GetInstanceID()) continue; // each pair once
+            if (Time.time < o._nextCollisionDamage) continue;
+            Vector3 mp = transform.position, op = o.transform.position;
+            float dx = mp.x - op.x, dz = mp.z - op.z;
+            float minD = collisionRadius + o.CollisionRadius;
+            if (dx * dx + dz * dz >= minD * minD) continue;      // not touching
+            // A hull only takes ram damage when a PLAYER is actually ABOARD one of the two ships — so a parked,
+            // empty player ship (and any AI-vs-AI touch) is never damaged.
+            if (!IsManned() && !o.IsManned())
+            {
+                _nextCollisionDamage = o._nextCollisionDamage = Time.time + collisionCooldown;
+                continue;
+            }
+            var myHp = GetComponent<ShipHealth>();
+            var oHp = o.GetComponent<ShipHealth>();
+            if (myHp != null) myHp.ApplyDamage(collisionDamage, NetworkManager.ServerClientId, mp, DamageType.Cannon);
+            if (oHp != null) oHp.ApplyDamage(collisionDamage, NetworkManager.ServerClientId, op, DamageType.Cannon);
+            _nextCollisionDamage = o._nextCollisionDamage = Time.time + collisionCooldown;
+        }
+    }
+
+    /// <summary>True if a live player is standing on this hull's deck (used to gate ram damage — an empty hull is
+    /// never damaged by a bump).</summary>
+    public bool IsManned()
+    {
+        var all = Health.All;
+        for (int i = 0; i < all.Count; i++)
+        {
+            var h = all[i];
+            if (h == null || h.Side != Team.Player || !h.IsAlive) continue;
+            int n = Physics.RaycastNonAlloc(h.transform.position + Vector3.up, Vector3.down, _depthHits, 3.5f, ~0, QueryTriggerInteraction.Ignore);
+            for (int j = 0; j < n; j++)
+                if (_depthHits[j].collider.GetComponentInParent<ShipController>() == this) return true;
+        }
+        return false;
     }
 
     // The owner (driver's client, or the server when idle) advances + publishes the authoritative state.
@@ -177,7 +271,11 @@ public class ShipController : NetworkBehaviour
         var s = _current;
         float turnInput = 0f;
         bool driving = NetworkManager != null && _driver.Value == NetworkManager.LocalClientId;
-        if (driving)
+        if (Disabled)
+        {
+            s.SailsOpen = false; // wrecked hull: no thrust, no steering
+        }
+        else if (driving)
         {
             var kb = Keyboard.current;
             if (kb != null)
@@ -206,10 +304,24 @@ public class ShipController : NetworkBehaviour
         float nextX = s.PosX + fwd.x * s.Speed * dt;
         float nextZ = s.PosZ + fwd.z * s.Speed * dt;
 
+        ResolveShipOverlap(ref nextX, ref nextZ, ref s.Speed);  // push out of any other hull we'd interpenetrate
+
         if (clampToSea)
         {
             nextX = Mathf.Clamp(nextX, seaCenter.x - seaHalfExtents.x, seaCenter.x + seaHalfExtents.x);
             nextZ = Mathf.Clamp(nextZ, seaCenter.y - seaHalfExtents.y, seaCenter.y + seaHalfExtents.y);
+        }
+        if (clampToBoundary)
+        {
+            float bx = nextX - boundaryCenter.x, bz = nextZ - boundaryCenter.z;
+            float bd = Mathf.Sqrt(bx * bx + bz * bz);
+            if (bd > boundaryRadius)                              // radial hard fence — can't sail past it
+            {
+                float f = boundaryRadius / bd;
+                nextX = boundaryCenter.x + bx * f;
+                nextZ = boundaryCenter.z + bz * f;
+                s.Speed = Mathf.Min(s.Speed, maxSpeed * 0.2f);
+            }
         }
         if (blockLand && !DeepWaterAt(nextX, nextZ))
         {

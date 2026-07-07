@@ -207,6 +207,9 @@ GameObject:
   - component: {fileID: 4911601853964136531}
   - component: {fileID: 7697455889913277694}
   - component: {fileID: 3050398514549483644}
+  - component: {fileID: 5778697760912289399}
+  - component: {fileID: 8173150906096965590}
+  - component: {fileID: 9053445427064970612}
   m_Layer: 0
   m_Name: Player
   m_TagString: Player
@@ -432,6 +435,9 @@ MonoBehaviour:
   bulletGravity: 0
   bulletLife: 1.2
   gunEyeHeight: 1.5
+  swordDamage: 30
+  swordRange: 2.6
+  swordArc: 150
 --- !u!114 &4911601853964136531
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -475,6 +481,54 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1af3e1389ca5aa44fabe60a8899a3262, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerDeath
+  ShowTopMostFoldoutHeaderGroup: 1
+--- !u!114 &5778697760912289399
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 513321917047699477}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4f623fd14343a1a47aa000be36ece4e3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerWallet
+  ShowTopMostFoldoutHeaderGroup: 1
+  startingGold: 0
+--- !u!114 &8173150906096965590
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 513321917047699477}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2cd25ae831ed3804cb1a1718ab2c6786, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ShipGunner
+  ShowTopMostFoldoutHeaderGroup: 1
+  aimCamName: CannonAimCam
+  aimPriority: 30
+  pitchSensitivity: 0.08
+  camPitch: 5
+  cannonShake: 2.6
+  dofAimStart: 110
+  dofRestStart: 55
+  blendSpeed: 12
+--- !u!114 &9053445427064970612
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 513321917047699477}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7255a43aaef4e734a9d3d70d18fb729c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerSaveAgent
   ShowTopMostFoldoutHeaderGroup: 1
 --- !u!1 &1010120301404727160
 GameObject:

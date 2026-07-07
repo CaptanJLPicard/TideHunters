@@ -20,12 +20,14 @@ public class PlayerInteractor : NetworkBehaviour
     private PlayerInventory _inv;
     private PlayerCombat _combat;
     private PlayerController _pc;
+    private PlayerWallet _wallet;
 
     public override void OnNetworkSpawn()
     {
         _inv = GetComponent<PlayerInventory>();
         _combat = GetComponent<PlayerCombat>();
         _pc = GetComponent<PlayerController>();
+        _wallet = GetComponent<PlayerWallet>();
     }
 
     private void Update()
@@ -66,12 +68,38 @@ public class PlayerInteractor : NetworkBehaviour
             }
         }
 
-        // 1) A shop item under the crosshair takes priority.
+        // Reviving a downed teammate you're looking at (highest priority — it's urgent).
+        var downed = FindLookedAtDownedPlayer();
+        if (downed != null)
+        {
+            hud?.ShowPrompt("Press E to revive");
+            if (ePressed) ReviveRpc(downed.NetworkObject);
+            return;
+        }
+
+        // Delivering a stolen chest to Home for gold (rewards every player).
+        if (_inv != null && _inv.IsCarryingChest && HomeZone.Instance != null)
+        {
+            var home = HomeZone.Instance;
+            if ((home.Position - transform.position).sqrMagnitude <= home.Radius * home.Radius)
+            {
+                int reward = ChestReward(_inv.SelectedChest);
+                hud?.ShowPrompt($"Press E to deliver chest  (+{reward}g)");
+                if (ePressed) DeliverChestRpc();
+                return;
+            }
+        }
+
+        // 1) A shop item under the crosshair — buy it with gold.
         int shopTarget = shop != null ? FindLookedAt(shop) : -1;
         if (shopTarget >= 0)
         {
-            hud?.ShowPrompt($"Press E to equip {shop.Name(shopTarget)}");
-            if (ePressed) PickupShopRpc(shopTarget);
+            int price = shop.Price(shopTarget);
+            bool afford = _wallet == null || _wallet.CanAfford(price);
+            hud?.ShowPrompt(afford
+                ? $"Press E to buy {shop.Name(shopTarget)}  ({price}g)"
+                : $"Need {price}g  —  {shop.Name(shopTarget)}");
+            if (ePressed && afford) PickupShopRpc(shopTarget);
             return;
         }
 
@@ -193,6 +221,38 @@ public class PlayerInteractor : NetworkBehaviour
         public int Compare(RaycastHit a, RaycastHit b) => a.distance.CompareTo(b.distance);
     }
 
+    /// <summary>A downed teammate near the crosshair within reach (angular look-at). Null if none.</summary>
+    private Health FindLookedAtDownedPlayer()
+    {
+        var cam = Camera.main;
+        if (cam == null) return null;
+        Vector3 camPos = cam.transform.position, camFwd = cam.transform.forward;
+        float rangeSqr = range * range;
+        Health best = null;
+        float bestAngle = aimAngle;
+        var all = Health.All;
+        for (int i = 0; i < all.Count; i++)
+        {
+            var h = all[i];
+            if (h == null || h.Side != Team.Player || h.IsAlive || h.gameObject == gameObject) continue; // downed teammates only
+            Vector3 aim = h.transform.position + Vector3.up * 1f;
+            if ((aim - transform.position).sqrMagnitude > rangeSqr) continue;
+            float angle = Vector3.Angle(camFwd, aim - camPos);
+            if (angle < bestAngle) { bestAngle = angle; best = h; }
+        }
+        return best;
+    }
+
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
+    private void ReviveRpc(NetworkObjectReference targetRef)
+    {
+        if (!targetRef.TryGet(out var no)) return;
+        var h = no.GetComponent<Health>();
+        if (h == null || h.Side != Team.Player || h.IsAlive) return;
+        if ((no.transform.position - transform.position).sqrMagnitude > (range + 1.5f) * (range + 1.5f)) return;
+        h.ReviveServer(25); // back up with a quarter of health
+    }
+
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
     private void CarryChestRpc(NetworkObjectReference chestRef)
     {
@@ -248,11 +308,38 @@ public class PlayerInteractor : NetworkBehaviour
         var shop = ShopManager.Instance;
         if (shop == null || _inv == null || !shop.IsAvailable(shopId)) return;
         if ((shop.Position(shopId) - transform.position).sqrMagnitude > (range + 1.5f) * (range + 1.5f)) return;
-
+        int price = shop.Price(shopId);
+        if (_wallet == null || !_wallet.CanAfford(price)) return; // can't afford
+        if (!_inv.HasEmptySlot) return;                            // no room — don't consume the item
         if (shop.TryConsumeServer(shopId, out var weapon) && _inv.AddWeaponServer(weapon))
+        {
+            _wallet.TrySpendServer(price);
             HideShopItemRpc(shopId);
+        }
     }
 
     [Rpc(SendTo.Everyone)]
     private void HideShopItemRpc(int shopId) => ShopManager.Instance?.HideItem(shopId);
+
+    // Server: hand in the carried chest and pay every player its gold reward.
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
+    private void DeliverChestRpc()
+    {
+        var home = HomeZone.Instance;
+        if (_inv == null || home == null) return;
+        float r = home.Radius + 1.5f;
+        if ((home.Position - transform.position).sqrMagnitude > r * r) return;
+        ChestId c = _inv.DeliverSelectedChestServer();
+        if (c == ChestId.None) return;
+        int reward = ChestReward(c);
+        if (reward > 0)
+            foreach (var w in FindObjectsByType<PlayerWallet>(FindObjectsSortMode.None)) w.AddServer(reward);
+    }
+
+    private static int ChestReward(ChestId id)
+    {
+        var db = ChestDatabase.Instance;
+        var def = db != null ? db.Get(id) : null;
+        return def != null ? def.goldReward : 0;
+    }
 }

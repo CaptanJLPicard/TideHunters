@@ -230,6 +230,53 @@ public class PlayerInventory : NetworkBehaviour
         if (ship != null) no.TrySetParent(ship.NetworkObject, true);
     }
 
+    /// <summary>Server: spawn a loose weapon in the world at a saved spot (used to restore world pickups).</summary>
+    public void SpawnDroppedWeaponServer(WeaponId id, Vector3 pos)
+    {
+        if (!IsServer || droppedWeaponPrefab == null || id == WeaponId.None) return;
+        var go = Instantiate(droppedWeaponPrefab, pos, Quaternion.identity);
+        go.GetComponent<NetworkObject>().Spawn(true);
+        go.GetComponent<DroppedWeapon>().SetWeaponServer(id);
+    }
+
+    /// <summary>Server: spawn a world chest at a saved spot (used to restore world pickups).</summary>
+    public void SpawnWorldChestServer(ChestId chest, Vector3 pos)
+    {
+        if (!IsServer || chest == ChestId.None) return;
+        var def = ChestDatabase.Instance != null ? ChestDatabase.Instance.Get(chest) : null;
+        if (def == null || def.worldPrefab == null) return;
+        var go = Instantiate(def.worldPrefab, pos, Quaternion.identity);
+        go.GetComponent<NetworkObject>().Spawn(true);
+    }
+
+    /// <summary>Server: overwrite the whole inventory from a save (a weapon OR a chest per slot + selection).</summary>
+    public void SetInventoryServer(int[] weapons, int[] chests, int selected)
+    {
+        if (!IsServer) return;
+        var s = new InvState();
+        for (int i = 0; i < SlotCount; i++)
+        {
+            s.Set(i, weapons != null && i < weapons.Length ? (WeaponId)(byte)weapons[i] : WeaponId.None);
+            s.SetChest(i, chests != null && i < chests.Length ? (ChestId)(byte)chests[i] : ChestId.None);
+        }
+        s.Selected = (byte)Mathf.Clamp(selected, 0, SlotCount - 1);
+        _inv.Value = s;
+    }
+
+    /// <summary>Server: hand in the carried chest for gold — remove it from the inventory WITHOUT dropping it back
+    /// into the world. Returns the delivered chest id (None if not carrying one). The carry visual + hotbar clear
+    /// automatically from the replicated inventory.</summary>
+    public ChestId DeliverSelectedChestServer()
+    {
+        if (!IsServer) return ChestId.None;
+        ChestId c = SelectedChest;
+        if (c == ChestId.None) return ChestId.None;
+        var s = _inv.Value;
+        s.SetChest(s.Selected, ChestId.None);
+        _inv.Value = s;
+        return c;
+    }
+
     // ---- Owner requests → server ---------------------------------------------------------
 
     public void RequestSelectSlot(int slot) { if (IsOwner) SelectSlotRpc((byte)Mathf.Clamp(slot, 0, SlotCount - 1)); }

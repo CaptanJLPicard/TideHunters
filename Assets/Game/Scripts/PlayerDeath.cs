@@ -11,10 +11,15 @@ using UnityEngine;
 public class PlayerDeath : NetworkBehaviour
 {
     private static readonly int DieHash = Animator.StringToHash("Die");
+    private static readonly int DeathTypeHash = Animator.StringToHash("DeathType");
 
     private Health _health;
     private Animator _animator;
     private bool _frozen;
+
+    /// <summary>True while this player is down (dead, awaiting revive or the death screen) — the interactor reads
+    /// it to offer "Press E to revive" to teammates.</summary>
+    public bool IsDown => _frozen;
 
     public override void OnNetworkSpawn()
     {
@@ -39,9 +44,30 @@ public class PlayerDeath : NetworkBehaviour
     {
         if (_frozen) return;
         _frozen = true;
-        if (_animator != null) _animator.SetTrigger(DieHash);   // hook: plays the death clip once a Die state exists
+        if (_animator != null)
+        {
+            _animator.SetInteger(DeathTypeHash, _health != null ? (int)_health.LastDamageType : 1); // 2=Sword else gun
+            _animator.SetTrigger(DieHash);
+            ZeroDeathLayers();                                  // let the full-body death anim show cleanly
+        }
         SetControl(false);                                      // corpse can't move / shoot / interact
-        if (IsOwner) DeathScreen.Instance?.Show();
+        // Solo → the YOU DIED screen. With teammates alive, stay down and wait to be revived (no screen yet).
+        if (IsOwner && !AnyTeammateAlive()) DeathScreen.Instance?.Show();
+    }
+
+    private void ZeroDeathLayers()
+    {
+        int ub = _animator.GetLayerIndex("UpperBody");
+        int carry = _animator.GetLayerIndex("Carry");
+        if (ub >= 0) _animator.SetLayerWeight(ub, 0f);
+        if (carry >= 0) _animator.SetLayerWeight(carry, 0f);
+    }
+
+    private bool AnyTeammateAlive()
+    {
+        foreach (var h in Health.All)
+            if (h != null && h != _health && h.Side == Team.Player && h.IsAlive) return true;
+        return false;
     }
 
     private void Revive()
