@@ -50,8 +50,8 @@ public class PlayerCombat : NetworkBehaviour
     [SerializeField] private float cameraShake = 1.4f;
 
     [Header("Gun bullet (physical + tracer)")]
-    [Tooltip("Damage a gun bullet deals to an enemy NPC. Player bullets = 20.")]
-    [SerializeField] private int gunDamage = 20;
+    [Tooltip("Damage a gun bullet deals to an enemy NPC.")]
+    [SerializeField] private int gunDamage = 40;
     [Tooltip("Tracer bullet prefab (fast, trailing). Fired from the held gun's Muzzle along the aim.")]
     [SerializeField] private GameObject bulletPrefab;
     [SerializeField] private GameObject bulletImpactFx;
@@ -62,7 +62,7 @@ public class PlayerCombat : NetworkBehaviour
     [SerializeField] private float gunEyeHeight = 1.5f;
 
     [Header("Sword (server melee)")]
-    [SerializeField] private int swordDamage = 30;
+    [SerializeField] private int swordDamage = 60;
     [SerializeField] private float swordRange = 2.6f;
     [Tooltip("Hit cone (deg) in front of the player.")]
     [SerializeField] private float swordArc = 150f;

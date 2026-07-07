@@ -428,14 +428,14 @@ MonoBehaviour:
   muzzleFxEuler: {x: 0, y: 0, z: 0}
   muzzleFxScale: 0.5
   cameraShake: 1.4
-  gunDamage: 20
+  gunDamage: 40
   bulletPrefab: {fileID: 27299688354101545, guid: dc448cf0e158f4b43975cab630f63214, type: 3}
   bulletImpactFx: {fileID: 0}
   bulletSpeed: 78
   bulletGravity: 0
   bulletLife: 1.2
   gunEyeHeight: 1.5
-  swordDamage: 30
+  swordDamage: 60
   swordRange: 2.6
   swordArc: 150
 --- !u!114 &4911601853964136531

@@ -33,6 +33,8 @@ public class TestingNetcodeUI : MonoBehaviour
     [Header("Save slots (Create panel)")]
     [SerializeField] private Button[] slotButtons;     // one per SaveSystem slot
     [SerializeField] private TMP_Text[] slotSummaries; // "Slot 1 — 1250 G" / "Empty"
+    [Tooltip("Shows this machine's LAN IP on the Create panel — the address another device types into JOIN.")]
+    [SerializeField] private TMP_Text lanInfoText;
 
     [Header("Buttons")]
     [SerializeField] private Button gotoCreateButton;
@@ -143,8 +145,28 @@ public class TestingNetcodeUI : MonoBehaviour
         var nm = NetworkManager.Singleton;
         if (nm == null) return;
         ServerName = createInput != null && !string.IsNullOrWhiteSpace(createInput.text) ? createInput.text.Trim() : "My Server";
-        SetStatus("Hosting...");
-        if (!nm.StartHost()) ShowError("COULD NOT HOST", "The port may already be in use.");
+
+        // Listen on ALL network interfaces (0.0.0.0), not just loopback, so players on other devices can JOIN.
+        // (Default UnityTransport binds to 127.0.0.1, which is why remote joins were timing out.)
+        string lan = GetLocalIPv4();
+        var utp = nm.GetComponent<UnityTransport>();
+        if (utp != null) utp.SetConnectionData(lan, port, "0.0.0.0");
+
+        if (!nm.StartHost()) { ShowError("COULD NOT HOST", "The port may already be in use."); return; }
+        SetStatus("Hosting — others JOIN  <color=#EBC84C>" + lan + "</color>");
+    }
+
+    /// <summary>This machine's LAN IPv4 (what a player on another device types into JOIN). Loopback fallback.</summary>
+    private static string GetLocalIPv4()
+    {
+        try
+        {
+            foreach (var ip in System.Net.Dns.GetHostEntry(System.Net.Dns.GetHostName()).AddressList)
+                if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !System.Net.IPAddress.IsLoopback(ip))
+                    return ip.ToString();
+        }
+        catch { }
+        return "127.0.0.1";
     }
 
     private void Join()
@@ -196,9 +218,11 @@ public class TestingNetcodeUI : MonoBehaviour
 
     private void RefreshSlots()
     {
-        if (slotSummaries == null) return;
-        for (int i = 0; i < slotSummaries.Length; i++)
-            if (slotSummaries[i] != null) slotSummaries[i].text = "SLOT " + (i + 1) + "\n<size=60%>" + SaveSystem.Summary(i) + "</size>";
+        if (slotSummaries != null)
+            for (int i = 0; i < slotSummaries.Length; i++)
+                if (slotSummaries[i] != null) slotSummaries[i].text = "SLOT " + (i + 1) + "\n<size=60%>" + SaveSystem.Summary(i) + "</size>";
+        if (lanInfoText != null)
+            lanInfoText.text = "Your IP:  <color=#EBC84C>" + GetLocalIPv4() + "</color>   <size=70%>(others JOIN this)</size>";
     }
 
     private void ShowError(string title, string detail)
